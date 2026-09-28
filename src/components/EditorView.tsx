@@ -38,6 +38,7 @@ import {
   Bot,
   Undo2,
   Redo2,
+  AlertCircle,
 } from 'lucide-react';
 
 type EditorMode = 'live' | 'split' | 'source';
@@ -71,6 +72,9 @@ export const EditorView: React.FC = () => {
     redo,
     canUndo,
     canRedo,
+    isSaving,
+    saveError,
+    saveActiveNote,
   } = useVaultStore();
 
   // Default mode: 'live' (Obsidian Live Preview)
@@ -677,11 +681,22 @@ export const EditorView: React.FC = () => {
           handleInsertInlineMath();
           return;
         }
+
+        // Ctrl+S: Immediate Save Note
+        if ((e.key === 's' || e.key === 'S') && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (activeBlockId !== null && blockInputRef.current) {
+            commitBlockEdit(activeBlockId, activeBlockDraft);
+          }
+          saveActiveNote();
+          return;
+        }
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [activeNotePath, activeBlockId, activeBlockDraft, activeNoteContent, mode, canUndo, canRedo]);
+  }, [activeNotePath, activeBlockId, activeBlockDraft, activeNoteContent, mode, canUndo, canRedo, saveActiveNote]);
 
   // LaTeX Suite snippet expansions ('mk' -> $ | $, 'dm' -> $$\n|\n$$, auto-wrap $) and local shortcuts
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -724,6 +739,14 @@ export const EditorView: React.FC = () => {
       e.preventDefault();
       e.stopPropagation();
       handleInsertInlineMath();
+      return;
+    }
+
+    // Ctrl+S: Immediate Save
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S') && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveActiveNote();
       return;
     }
 
@@ -1402,11 +1425,29 @@ export const EditorView: React.FC = () => {
           <span className="text-[11px] text-[var(--text-secondary)] truncate">{activeNote.folder}</span>
 
           <span className="inline-flex items-center ml-2 text-[10px] text-[var(--text-muted)]">
-            {isDirty ? (
+            {saveError ? (
+              <button
+                onClick={() => saveActiveNote()}
+                className="flex items-center text-rose-500 hover:text-rose-600 dark:text-rose-400 space-x-1 cursor-pointer transition-colors"
+                title={`Errore nel salvataggio: ${saveError}. Clicca per riprovare.`}
+              >
+                <AlertCircle size={11} />
+                <span>Errore salvataggio (riprova)</span>
+              </button>
+            ) : isSaving ? (
               <span className="flex items-center text-[var(--accent)] space-x-1">
                 <RotateCw size={11} className="animate-spin" />
                 <span>Salvataggio...</span>
               </span>
+            ) : isDirty ? (
+              <button
+                onClick={() => saveActiveNote()}
+                className="flex items-center text-amber-500 dark:text-amber-400 space-x-1 hover:underline cursor-pointer transition-colors"
+                title="Modifiche non salvate (Ctrl+S per salvare subito)"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span>Modificato</span>
+              </button>
             ) : (
               <span className="flex items-center text-emerald-600 dark:text-emerald-400 space-x-1">
                 <Check size={11} />
@@ -2410,6 +2451,13 @@ classDiagram
                             e.preventDefault();
                             e.stopPropagation();
                             handleInsertInlineMath();
+                            return;
+                          }
+                          if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S') && !e.shiftKey && !e.altKey) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            commitBlockEdit(block.id, activeBlockDraft);
+                            saveActiveNote();
                             return;
                           }
                           if (e.key === '$' && blockInputRef.current) {

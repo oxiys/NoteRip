@@ -113,10 +113,23 @@ pub fn write_note_content(file_path: &str, content: &str) -> Result<(), String> 
     let path = Path::new(file_path);
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent dirs: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Impossibile creare le cartelle: {e}"))?;
         }
     }
-    fs::write(path, content).map_err(|e| format!("Failed to write file: {e}"))
+
+    // Robust retry loop (3 attempts with backoff) to handle transient Windows Defender / indexer file locks
+    let mut last_err = None;
+    for attempt in 0..3 {
+        match fs::write(path, content) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                last_err = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(50 * (attempt + 1)));
+            }
+        }
+    }
+
+    Err(format!("Errore scrittura file: {}", last_err.unwrap()))
 }
 
 pub fn create_new_note(vault_path: &str, rel_path: &str, content: Option<&str>) -> Result<String, String> {

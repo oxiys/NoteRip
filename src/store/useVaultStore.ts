@@ -40,6 +40,9 @@ interface VaultState {
   activeNotePath: string | null;
   activeNoteContent: string;
   isDirty: boolean;
+  isSaving: boolean;
+  saveError: string | null;
+  lastSavedTime: number | null;
   selectedFolder: string | null;
   searchQuery: string;
   activeView: 'notes' | 'graph';
@@ -214,6 +217,9 @@ export const useVaultStore = create<VaultState>((set, get) => {
     canUndo: false,
     canRedo: false,
     isDirty: false,
+    isSaving: false,
+    saveError: null,
+    lastSavedTime: null,
     selectedFolder: null,
     searchQuery: '',
     activeView: 'notes',
@@ -379,6 +385,8 @@ export const useVaultStore = create<VaultState>((set, get) => {
           canUndo: false,
           canRedo: false,
           isDirty: false,
+          isSaving: false,
+          saveError: null,
         });
       } catch (err) {
         console.error('Failed to read note:', err);
@@ -417,6 +425,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
         canUndo: newUndoStack.length > 0,
         canRedo: false,
         isDirty: true,
+        saveError: null,
         saveTimeoutId: timeoutId,
       });
     },
@@ -480,8 +489,14 @@ export const useVaultStore = create<VaultState>((set, get) => {
     },
 
     saveActiveNote: async () => {
-      const { activeNotePath, activeNoteContent, vaultPath, notes } = get();
+      const { activeNotePath, activeNoteContent, vaultPath, notes, saveTimeoutId } = get();
       if (!activeNotePath || !vaultPath) return;
+
+      if (saveTimeoutId) {
+        window.clearTimeout(saveTimeoutId);
+      }
+
+      set({ isSaving: true, saveTimeoutId: null });
 
       try {
         await tauriBridge.writeNote(activeNotePath, activeNoteContent);
@@ -515,6 +530,9 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
         set({
           isDirty: false,
+          isSaving: false,
+          saveError: null,
+          lastSavedTime: Date.now(),
           notes: reindexed,
           saveTimeoutId: null,
         });
@@ -522,12 +540,17 @@ export const useVaultStore = create<VaultState>((set, get) => {
         get().refreshFlashcards();
         semanticSearchEngine.indexVault(reindexed);
 
-        // Auto-sync on save if enabled
-        if (get().autoSyncInterval === 'on_save') {
+        // Auto-sync on save if enabled (rate-limited / only if not already syncing)
+        if (get().autoSyncInterval === 'on_save' && !get().gitStatus.isSyncing) {
           get().runGitSync('Auto-sync: salvataggio nota');
         }
       } catch (err) {
         console.error('Failed to save note:', err);
+        set({
+          isSaving: false,
+          saveError: err instanceof Error ? err.message : String(err),
+          saveTimeoutId: null,
+        });
       }
     },
 
