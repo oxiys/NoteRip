@@ -1,21 +1,55 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { useVaultStore } from './store/useVaultStore';
 import { Sidebar } from './components/Sidebar';
 import { EditorView } from './components/EditorView';
 import { InspectorPanel } from './components/InspectorPanel';
-import { GraphView } from './components/GraphView';
-import { FlashcardsView } from './components/FlashcardsView';
-import { SyncModal } from './components/SyncModal';
-import { FlashcardModal } from './components/FlashcardModal';
-import { CommandPalette } from './components/CommandPalette';
-import { SmartQAModal } from './components/SmartQAModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+// Lazy-loaded heavy views and modals to minimize initial V8 heap and RAM footprint
+const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })));
+const FlashcardsView = lazy(() => import('./components/FlashcardsView').then((m) => ({ default: m.FlashcardsView })));
+const SyncModal = lazy(() => import('./components/SyncModal').then((m) => ({ default: m.SyncModal })));
+const FlashcardModal = lazy(() => import('./components/FlashcardModal').then((m) => ({ default: m.FlashcardModal })));
+const CommandPalette = lazy(() => import('./components/CommandPalette').then((m) => ({ default: m.CommandPalette })));
+const SmartQAModal = lazy(() => import('./components/SmartQAModal').then((m) => ({ default: m.SmartQAModal })));
+const FontModal = lazy(() => import('./components/FontModal').then((m) => ({ default: m.FontModal })));
+const NewFlashcardModal = lazy(() => import('./components/NewFlashcardModal').then((m) => ({ default: m.NewFlashcardModal })));
 
 export const App: React.FC = () => {
-  const { initialize, activeView, vaultPath, openVaultDialog } = useVaultStore();
+  const {
+    initialize,
+    activeView,
+    vaultPath,
+    openVaultDialog,
+    isSyncModalOpen,
+    isFlashcardModalOpen,
+    isCommandPaletteOpen,
+    isSmartQAModalOpen,
+    isFontModalOpen,
+    isNewFlashcardModalOpen,
+    toggleCommandPalette,
+    toggleSmartQAModal,
+  } = useVaultStore();
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Global lightweight shortcut listener (so modals don't have to be mounted to listen)
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      const isCmdOrCtrl = e.ctrlKey || e.metaKey;
+      if (isCmdOrCtrl && (e.key.toLowerCase() === 'k' || e.key.toLowerCase() === 'p')) {
+        e.preventDefault();
+        toggleCommandPalette();
+      } else if (isCmdOrCtrl && e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        toggleSmartQAModal();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [toggleCommandPalette, toggleSmartQAModal]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-app)] text-[var(--text-primary)] font-sans antialiased transition-colors duration-200">
@@ -24,17 +58,23 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       {activeView === 'graph' ? (
-        /* Fullscreen Interactive Physics Graph */
-        <GraphView />
+        /* Fullscreen Interactive Physics Graph (Lazy loaded) */
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-[var(--text-muted)]">Caricamento Grafo...</div>}>
+          <GraphView />
+        </Suspense>
       ) : activeView === 'flashcards' ? (
-        /* Fullscreen Dedicated Flashcards Section */
-        <FlashcardsView />
+        /* Fullscreen Dedicated Flashcards Section (Lazy loaded) */
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-[var(--text-muted)]">Caricamento Flashcards...</div>}>
+          <FlashcardsView />
+        </Suspense>
       ) : (
         /* Obsidian-Style Layout: Main Markdown Editor & Live Preview with Floating Inspector Card */
-        <div className="flex-1 h-full flex relative overflow-hidden min-w-0">
-          <EditorView />
-          <InspectorPanel />
-        </div>
+        <ErrorBoundary fallbackTitle="Errore nel caricamento della nota">
+          <div className="flex-1 h-full flex relative overflow-hidden min-w-0">
+            <EditorView />
+            <InspectorPanel />
+          </div>
+        </ErrorBoundary>
       )}
 
       {/* Empty Vault Onboarding Overlay if no vault is selected */}
@@ -63,17 +103,15 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Sync Manager Modal */}
-      <SyncModal />
-
-      {/* Spaced Repetition (Anki SM-2) Flashcard Session Modal */}
-      <FlashcardModal />
-
-      {/* Global Command Palette & Quick Switcher (Ctrl+K / Cmd+K) */}
-      <CommandPalette />
-
-      {/* Semantic Search & Smart Q&A Modal */}
-      <SmartQAModal />
+      {/* Lazy-loaded conditional modals (Zero memory overhead when closed) */}
+      <Suspense fallback={null}>
+        {isSyncModalOpen && <SyncModal />}
+        {isFlashcardModalOpen && <FlashcardModal />}
+        {isCommandPaletteOpen && <CommandPalette />}
+        {isSmartQAModalOpen && <SmartQAModal />}
+        {isFontModalOpen && <FontModal />}
+        {isNewFlashcardModalOpen && <NewFlashcardModal />}
+      </Suspense>
     </div>
   );
 };

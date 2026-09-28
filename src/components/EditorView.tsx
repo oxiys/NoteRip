@@ -3,6 +3,8 @@ import { useVaultStore } from '../store/useVaultStore';
 import { DataviewRenderer } from './DataviewRenderer';
 import { renderLatexSafe } from '../services/latexSanitizer';
 import { CodeBlockView } from './CodeBlockView';
+import { MermaidRenderer } from './MermaidRenderer';
+import { ErrorBoundary } from './ErrorBoundary';
 import {
   Check,
   RotateCw,
@@ -18,6 +20,7 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
   List,
   ListOrdered,
   CheckSquare,
@@ -39,16 +42,19 @@ import {
   Undo2,
   Redo2,
   AlertCircle,
+  Type,
 } from 'lucide-react';
 
 type EditorMode = 'live' | 'split' | 'source';
 
 interface BlockItem {
   id: string;
-  type: 'h1' | 'h2' | 'h3' | 'math' | 'code' | 'dataview' | 'table' | 'quote' | 'task' | 'list' | 'hr' | 'paragraph';
+  type: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'math' | 'code' | 'dataview' | 'table' | 'quote' | 'task' | 'list' | 'hr' | 'paragraph';
   rawText: string;
   startLine: number;
   endLine: number;
+  indentLevel?: number;
+  listMarker?: string;
 }
 
 export const EditorView: React.FC = () => {
@@ -75,6 +81,11 @@ export const EditorView: React.FC = () => {
     isSaving,
     saveError,
     saveActiveNote,
+    autoSaveMode,
+    setAutoSaveMode,
+    openNewFlashcardModal,
+    setActiveView,
+    toggleFontModal,
   } = useVaultStore();
 
   // Default mode: 'live' (Obsidian Live Preview)
@@ -163,8 +174,32 @@ export const EditorView: React.FC = () => {
   };
 
   const activeNote = React.useMemo(() => {
-    return notes.find((n) => n.path === activeNotePath) || null;
-  }, [notes, activeNotePath]);
+    if (!activeNotePath) return null;
+    const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
+    const normalizedActive = norm(activeNotePath);
+    const found = notes.find((n) => norm(n.path) === normalizedActive);
+    if (found) return found;
+
+    // Resilient fallback: If path is set, derive NoteItem representation from activeNotePath & activeNoteContent
+    const cleanPath = activeNotePath.replace(/\\/g, '/');
+    const segments = cleanPath.split('/');
+    const filename = segments[segments.length - 1] || 'Nota';
+    const title = filename.replace(/\.md$/i, '');
+    const folder = segments.length > 1 ? segments[segments.length - 2] : 'Root';
+
+    return {
+      path: activeNotePath,
+      title,
+      rel_path: filename,
+      preview: (activeNoteContent || '').slice(0, 100),
+      content: activeNoteContent || '',
+      folder,
+      updated_at: Date.now(),
+      tags: [],
+      outlinks: [],
+      backlinks: [],
+    };
+  }, [notes, activeNotePath, activeNoteContent]);
 
   const noteFlashcardsCount = React.useMemo(() => {
     if (!activeNotePath) return 0;
@@ -944,14 +979,23 @@ export const EditorView: React.FC = () => {
     return (
       <div
         key={key}
-        className="my-3 py-3 px-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--border-subtle)] overflow-x-auto text-center shadow-apple-sm transition-all hover:border-[var(--accent)]"
+        className="my-3.5 py-3.5 px-5 rounded-2xl bg-[var(--card-bg)]/60 backdrop-blur-md border border-[var(--border-subtle)] overflow-x-auto text-center shadow-2xs transition-all hover:border-[var(--accent)]/40 hover:bg-[var(--card-bg)]/80"
         dangerouslySetInnerHTML={{ __html: result.html }}
       />
     );
   };
 
+  // Robust table row parser: trims edges and splits cells
+  const parseTableRow = (line: string): string[] => {
+    let trimmed = line.trim();
+    if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+    if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
+    return trimmed.split('|').map((c) => c.trim());
+  };
+
   // Inline formatting parser: handles display math, inline math, highlights, WikiLinks, and markdown
-  const renderInlineFormatted = (text: string): React.ReactNode[] => {
+  const renderInlineFormatted = (text?: string | null): React.ReactNode[] => {
+    if (!text || typeof text !== 'string') return [];
     const tokens: React.ReactNode[] = [];
 
     // Unified regex for inline syntax:
@@ -974,6 +1018,9 @@ export const EditorView: React.FC = () => {
     let match: RegExpExecArray | null;
 
     while ((match = combinedRegex.exec(text)) !== null) {
+      if (match.index === combinedRegex.lastIndex) {
+        combinedRegex.lastIndex++;
+      }
       if (match.index > lastIndex) {
         tokens.push(text.slice(lastIndex, match.index));
       }
@@ -1238,7 +1285,7 @@ export const EditorView: React.FC = () => {
         continue;
       }
 
-      // 4. Headings
+      // 4. Headings (H1 to H6)
       if (line.startsWith('# ')) {
         blocks.push({
           id: `block-h1-${i}`,
@@ -1265,6 +1312,39 @@ export const EditorView: React.FC = () => {
         blocks.push({
           id: `block-h3-${i}`,
           type: 'h3',
+          rawText: line,
+          startLine: i,
+          endLine: i,
+        });
+        i++;
+        continue;
+      }
+      if (line.startsWith('#### ')) {
+        blocks.push({
+          id: `block-h4-${i}`,
+          type: 'h4',
+          rawText: line,
+          startLine: i,
+          endLine: i,
+        });
+        i++;
+        continue;
+      }
+      if (line.startsWith('##### ')) {
+        blocks.push({
+          id: `block-h5-${i}`,
+          type: 'h5',
+          rawText: line,
+          startLine: i,
+          endLine: i,
+        });
+        i++;
+        continue;
+      }
+      if (line.startsWith('###### ')) {
+        blocks.push({
+          id: `block-h6-${i}`,
+          type: 'h6',
           rawText: line,
           startLine: i,
           endLine: i,
@@ -1305,14 +1385,21 @@ export const EditorView: React.FC = () => {
         continue;
       }
 
-      // 7. Bullet / Numbered list
-      if (/^\s*(?:[-*]|\d+\.)\s+/.test(line)) {
+      // 7. Indented Bullet / Numbered / Lettered List (e.g. 1., 1), a), -, *, +)
+      const listMatch = line.match(/^(\s*)(?:([-*+])|(\d+[.)])|([a-zA-Z][.)]))\s+(.+)$/);
+      if (listMatch) {
+        const leadingWhitespace = listMatch[1] || '';
+        const marker = listMatch[2] || listMatch[3] || listMatch[4];
+        const spacesCount = leadingWhitespace.replace(/\t/g, '    ').length;
+        const indentLevel = Math.max(0, Math.floor(spacesCount / 2));
         blocks.push({
           id: `block-list-${i}`,
           type: 'list',
           rawText: line,
           startLine: i,
           endLine: i,
+          indentLevel,
+          listMarker: marker,
         });
         i++;
         continue;
@@ -1342,7 +1429,7 @@ export const EditorView: React.FC = () => {
         !lines[i + 1].startsWith('$$') &&
         !lines[i + 1].startsWith('|') &&
         !lines[i + 1].startsWith('> ') &&
-        !/^\s*(?:[-*]|\d+\.)\s+/.test(lines[i + 1])
+        !/^\s*(?:[-*+]|\d+[.)]|[a-zA-Z][.)])\s+/.test(lines[i + 1])
       ) {
         i++;
         paraRaw += '\n' + lines[i];
@@ -1404,16 +1491,16 @@ export const EditorView: React.FC = () => {
   let taskItemCounter = 0;
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-[var(--panel-bg)] apple-vibrant select-text relative">
-      {/* Editor Top Navigation Bar */}
-      <div className="h-10 px-4 border-b border-black/5 dark:border-white/10 flex items-center justify-between select-none bg-black/[0.01] dark:bg-white/[0.01]">
+    <div className="flex-1 h-full flex flex-col bg-[var(--bg-app)] select-text relative">
+      {/* Editor Top Navigation Bar (macOS Sonoma Floating Blur) */}
+      <div className="h-11 px-4 border-b border-[var(--border-subtle)] flex items-center justify-between select-none bg-[var(--bg-app)]/75 backdrop-blur-xl z-20">
         {/* Breadcrumb & Save Status */}
         <div className="flex items-center space-x-2 min-w-0">
           {!isSidebarOpen && (
             <button
               onClick={toggleSidebar}
               title="Mostra barra laterale (Esplora File)"
-              className="p-1 -ml-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors mr-1"
+              className="p-1.5 -ml-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors mr-1 macos-clickable"
             >
               <PanelLeftOpen size={15} />
             </button>
@@ -1421,7 +1508,7 @@ export const EditorView: React.FC = () => {
           <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
             {activeNote.title}
           </span>
-          <span className="text-neutral-300 dark:text-neutral-600">/</span>
+          <span className="text-[var(--text-muted)]">/</span>
           <span className="text-[11px] text-[var(--text-secondary)] truncate">{activeNote.folder}</span>
 
           <span className="inline-flex items-center ml-2 text-[10px] text-[var(--text-muted)]">
@@ -1443,10 +1530,10 @@ export const EditorView: React.FC = () => {
               <button
                 onClick={() => saveActiveNote()}
                 className="flex items-center text-amber-500 dark:text-amber-400 space-x-1 hover:underline cursor-pointer transition-colors"
-                title="Modifiche non salvate (Ctrl+S per salvare subito)"
+                title="Modifiche non salvate (Premi Ctrl+S o clicca qui per salvare)"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                <span>Modificato</span>
+                <span>Modificato (Ctrl+S)</span>
               </button>
             ) : (
               <span className="flex items-center text-emerald-600 dark:text-emerald-400 space-x-1">
@@ -1455,26 +1542,51 @@ export const EditorView: React.FC = () => {
               </span>
             )}
           </span>
+
+          {/* Auto-Save Toggle */}
+          <button
+            onClick={() => setAutoSaveMode(autoSaveMode === 'manual' ? '2s' : 'manual')}
+            className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-colors flex items-center space-x-1 border ${
+              autoSaveMode === 'manual'
+                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                : 'bg-black/5 dark:bg-white/5 text-[var(--text-muted)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'
+            }`}
+            title={
+              autoSaveMode === 'manual'
+                ? 'Salvataggio MANUALE (Ctrl+S). Clicca per passare al salvataggio automatico (2s).'
+                : 'Salvataggio AUTOMATICO (2s). Clicca per passare al salvataggio manuale (Ctrl+S).'
+            }
+          >
+            <span>{autoSaveMode === 'manual' ? 'Manuale' : 'Auto 2s'}</span>
+          </button>
         </div>
 
-        {/* View Mode Controls (Live Preview / Split / Source) & Inspector Toggle */}
+        {/* View Mode Controls (Live Preview / Split / Source) & Font & Inspector Toggle */}
         <div className="flex items-center space-x-1">
+          {/* Typography Font Settings Modal Toggle */}
+          <button
+            onClick={toggleFontModal}
+            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors macos-clickable"
+            title="Personalizza Font & Tipografia (Font di Sistema)"
+          >
+            <Type size={14} />
+          </button>
           {/* Mode Switcher */}
-          <div className="flex items-center bg-black/5 dark:bg-white/5 p-0.5 rounded-lg">
+          <div className="flex items-center bg-black/10 dark:bg-white/10 p-0.5 rounded-lg border border-[var(--border-subtle)]">
             <button
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setActiveBlockId(null);
                 setMode('live');
               }}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs transition-colors ${
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs macos-clickable transition-all ${
                 mode === 'live'
-                  ? 'bg-[var(--card-bg)] text-[var(--accent)] font-semibold shadow-apple-sm'
+                  ? 'bg-[var(--card-bg)] text-[var(--text-primary)] font-semibold shadow-xs'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
               title="Modalità Live Preview (Stile Obsidian: documento visivo formattato con modifica in-place)"
             >
-              <Sparkles size={13} />
+              <Sparkles size={13} className={mode === 'live' ? 'text-[var(--accent)]' : ''} />
               <span>Live Preview</span>
             </button>
             <button
@@ -1483,14 +1595,14 @@ export const EditorView: React.FC = () => {
                 setActiveBlockId(null);
                 setMode('split');
               }}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs transition-colors ${
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs macos-clickable transition-all ${
                 mode === 'split'
-                  ? 'bg-[var(--card-bg)] text-[var(--text-primary)] font-semibold shadow-apple-sm'
+                  ? 'bg-[var(--card-bg)] text-[var(--text-primary)] font-semibold shadow-xs'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
               title="Modalità Split (Editor a sinistra + Anteprima a destra)"
             >
-              <Columns size={13} />
+              <Columns size={13} className={mode === 'split' ? 'text-[var(--accent)]' : ''} />
               <span>Split</span>
             </button>
             <button
@@ -1499,14 +1611,14 @@ export const EditorView: React.FC = () => {
                 setActiveBlockId(null);
                 setMode('source');
               }}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs transition-colors ${
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs macos-clickable transition-all ${
                 mode === 'source'
-                  ? 'bg-[var(--card-bg)] text-[var(--accent)] font-semibold shadow-apple-sm'
+                  ? 'bg-[var(--card-bg)] text-[var(--text-primary)] font-semibold shadow-xs'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
               title="Modalità Codice Sorgente (Markdown puro)"
             >
-              <Code size={13} />
+              <Code size={13} className={mode === 'source' ? 'text-[var(--accent)]' : ''} />
               <span>Sorgente</span>
             </button>
           </div>
@@ -1668,18 +1780,18 @@ export const EditorView: React.FC = () => {
         </div>
       </div>
 
-      {/* Word-Style Rich Formatting Toolbar (Non-blurring onMouseDown) */}
-      <div className="px-3 py-1.5 border-b border-black/5 dark:border-white/10 flex items-center flex-wrap gap-1 bg-black/[0.02] dark:bg-white/[0.02] select-none text-neutral-600 dark:text-neutral-300 text-xs">
+      {/* Word-Style Rich Formatting Toolbar (macOS Sonoma Floating Blur) */}
+      <div className="px-3 py-1.5 border-b border-[var(--border-subtle)] flex items-center flex-wrap gap-1 bg-[var(--bg-app)]/65 backdrop-blur-xl select-none text-[var(--text-secondary)] text-xs z-10">
         {/* Undo / Redo */}
         <div className="flex items-center space-x-0.5">
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={undo}
             disabled={!canUndo}
-            className={`p-1 rounded transition-colors ${
+            className={`p-1 rounded-md transition-colors macos-clickable ${
               canUndo
-                ? 'hover:bg-black/5 dark:hover:bg-white/10 text-neutral-700 dark:text-neutral-200 cursor-pointer'
-                : 'opacity-30 cursor-not-allowed text-neutral-400'
+                ? 'hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-primary)] cursor-pointer'
+                : 'opacity-30 cursor-not-allowed text-[var(--text-muted)]'
             }`}
             title="Annulla operazione (Ctrl+Z)"
           >
@@ -1689,10 +1801,10 @@ export const EditorView: React.FC = () => {
             onMouseDown={(e) => e.preventDefault()}
             onClick={redo}
             disabled={!canRedo}
-            className={`p-1 rounded transition-colors ${
+            className={`p-1 rounded-md transition-colors macos-clickable ${
               canRedo
-                ? 'hover:bg-black/5 dark:hover:bg-white/10 text-neutral-700 dark:text-neutral-200 cursor-pointer'
-                : 'opacity-30 cursor-not-allowed text-neutral-400'
+                ? 'hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-primary)] cursor-pointer'
+                : 'opacity-30 cursor-not-allowed text-[var(--text-muted)]'
             }`}
             title="Ripristina operazione (Ctrl+Y / Ctrl+Shift+Z)"
           >
@@ -1700,14 +1812,14 @@ export const EditorView: React.FC = () => {
           </button>
         </div>
 
-        <div className="h-4 w-px bg-black/10 dark:border-white/10 mx-0.5" />
+        <div className="h-4 w-px bg-[var(--border-subtle)] mx-0.5" />
 
         {/* Headings */}
         <div className="flex items-center space-x-0.5">
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => insertHeading(1)}
-            className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors font-semibold"
+            className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-semibold macos-clickable"
             title="Titolo 1 (H1)"
           >
             <Heading1 size={15} />
@@ -1727,6 +1839,14 @@ export const EditorView: React.FC = () => {
             title="Titolo 3 (H3)"
           >
             <Heading3 size={15} />
+          </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertHeading(4)}
+            className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors font-semibold"
+            title="Titolo 4 (H4)"
+          >
+            <Heading4 size={15} />
           </button>
         </div>
 
@@ -2317,29 +2437,35 @@ classDiagram
           </button>
 
           {showFlashcardMenu && (
-            <div className="absolute top-7 left-0 w-68 rounded-2xl apple-card-item shadow-apple-popover p-2 border border-black/10 dark:border-white/15 z-50 space-y-1 text-xs">
+            <div className="absolute top-7 left-0 w-72 rounded-2xl apple-card-item shadow-apple-popover p-2 border border-black/10 dark:border-white/15 z-50 space-y-1 text-xs">
               <div className="px-2 py-1 text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
-                Flashcards & Ripetizione Spaziata
+                Flashcards & Studio Separato
               </div>
               <button
                 onClick={() => {
-                  applyFormat('\nDomanda qui?::Risposta corretta qui.\n', '', '');
+                  openNewFlashcardModal(activeNotePath || undefined);
                   setShowFlashcardMenu(false);
                 }}
                 className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
               >
-                <span className="font-semibold text-[var(--text-primary)]">Domanda / Risposta (Q::A)</span>
-                <span className="text-[10px] text-[var(--text-muted)] font-mono">Domanda?::Risposta</span>
+                <div className="flex items-center space-x-1.5 font-semibold text-[var(--text-primary)]">
+                  <Plus size={13} className="text-amber-500" />
+                  <span>Nuova Flashcard Standalone</span>
+                </div>
+                <span className="text-[10px] text-[var(--text-muted)]">Crea una carta separata (non sporca il testo della nota)</span>
               </button>
               <button
                 onClick={() => {
-                  applyFormat('{c1::', '}', 'testo nascosto');
+                  setActiveView('flashcards');
                   setShowFlashcardMenu(false);
                 }}
                 className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
               >
-                <span className="font-semibold text-[var(--text-primary)]">Cloze Deletion (Testo Nascosto)</span>
-                <span className="text-[10px] text-[var(--text-muted)] font-mono">{'{c1::testo da memorizzare}'}</span>
+                <div className="flex items-center space-x-1.5 font-semibold text-[var(--text-primary)]">
+                  <Brain size={13} className="text-amber-500" />
+                  <span>Sezione Flashcards & Mazzi</span>
+                </div>
+                <span className="text-[10px] text-[var(--text-muted)]">Visualizza, cerca e gestisci tutte le carte del Vault</span>
               </button>
               <button
                 onClick={() => {
@@ -2350,7 +2476,7 @@ classDiagram
               >
                 <div className="flex items-center space-x-1.5">
                   <Brain size={13} />
-                  <span className="font-semibold">Avvia Sessione Studio</span>
+                  <span className="font-semibold">Ripassa Carte di questa Nota</span>
                 </div>
                 <span className="text-[10px] font-mono bg-amber-500/20 px-1.5 py-0.5 rounded-md">
                   {noteFlashcardsCount} carte
@@ -2365,7 +2491,7 @@ classDiagram
       <div className="flex-1 flex overflow-hidden">
         {/* 1. Mode 'live': Obsidian-Style Live Preview with in-place block editing */}
         {mode === 'live' && (
-          <div ref={liveContainerRef} className="w-full h-full flex flex-col overflow-y-auto relative">
+          <div ref={liveContainerRef} className="w-full h-full flex flex-col overflow-y-auto relative editor-content-area">
             <div
               style={contentContainerStyle}
               className={`w-full mx-auto px-8 py-7 select-text space-y-2 relative transition-[max-width] ${
@@ -2402,15 +2528,39 @@ classDiagram
                   Larghezza: {editorWidth}px
                 </div>
               )}
+              {/* Note Header Title (macOS Sonoma / Bear style) if not starting with an H1 */}
+              {(parsedBlocks.length === 0 || parsedBlocks[0].type !== 'h1') && (
+                <div className="pt-2 pb-5 border-b border-[var(--border-subtle)] mb-5 select-none">
+                  <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] font-medium mb-2">
+                    <span className="px-2 py-0.5 rounded-full bg-[var(--surface-secondary)] text-[var(--text-secondary)]">
+                      {activeNote.folder || 'Vault'}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      {new Date(activeNote.updated_at * 1000).toLocaleDateString('it-IT', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">
+                    {activeNote.title}
+                  </h1>
+                </div>
+              )}
               {parsedBlocks.map((block) => {
                 const isEditing = activeBlockId === block.id;
 
-                // If currently editing this block in place
-                if (isEditing) {
+                const renderLiveBlock = () => {
+                  // If currently editing this block in place
+                  if (isEditing) {
                   return (
                     <div
                       key={block.id}
-                      className="my-2 p-2 rounded-xl bg-amber-500/5 dark:bg-amber-400/5 border border-amber-500/30 ring-1 ring-amber-500/20 transition-all shadow-apple-sm"
+                      className="my-2 p-3 rounded-2xl bg-[var(--card-bg)] border border-[var(--accent)]/40 ring-1 ring-[var(--accent)]/20 transition-all shadow-apple-sm"
                     >
                       <textarea
                         ref={blockInputRef}
@@ -2480,27 +2630,40 @@ classDiagram
                           }
                           if (e.key === 'Escape') {
                             setActiveBlockId(null);
-                          } else if (e.key === 'Enter' && !e.shiftKey && (block.type === 'h1' || block.type === 'h2' || block.type === 'h3')) {
+                          } else if (
+                            e.key === 'Enter' &&
+                            !e.shiftKey &&
+                            (block.type === 'h1' ||
+                              block.type === 'h2' ||
+                              block.type === 'h3' ||
+                              block.type === 'h4' ||
+                              block.type === 'h5' ||
+                              block.type === 'h6')
+                          ) {
                             e.preventDefault();
                             commitBlockEdit(block.id, activeBlockDraft);
                           }
                         }}
-                        className={`w-full bg-transparent focus:outline-none resize-none font-sans text-neutral-800 dark:text-neutral-200 ${
+                        className={`w-full bg-transparent focus:outline-none resize-none font-sans text-[var(--text-primary)] ${
                           block.type === 'h1'
                             ? 'text-2xl md:text-3xl font-bold tracking-tight'
                             : block.type === 'h2'
                             ? 'text-xl md:text-2xl font-semibold tracking-tight'
                             : block.type === 'h3'
                             ? 'text-base md:text-lg font-semibold'
+                            : block.type === 'h4'
+                            ? 'text-sm md:text-base font-semibold'
+                            : block.type === 'h5' || block.type === 'h6'
+                            ? 'text-xs md:text-sm font-semibold'
                             : 'text-xs md:text-sm leading-relaxed'
                         }`}
                         spellCheck={false}
                       />
-                      <div className="flex justify-between items-center text-[10px] text-neutral-400 pt-1 border-t border-black/5 dark:border-white/5 select-none">
+                      <div className="flex justify-between items-center text-[10px] text-[var(--text-muted)] pt-1.5 border-t border-[var(--border-subtle)] select-none">
                         <span>Invio per confermare • Esc per annullare</span>
                         <button
                           onClick={() => commitBlockEdit(block.id, activeBlockDraft)}
-                          className="px-2 py-0.5 rounded bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors shadow-apple-sm"
+                          className="px-3 py-1 rounded-xl bg-[var(--accent)] text-white font-medium hover:bg-[var(--accent-hover)] transition-colors macos-clickable shadow-xs"
                         >
                           Salva
                         </button>
@@ -2516,7 +2679,7 @@ classDiagram
                       <h1
                         key={block.id}
                         onClick={() => handleStartEditBlock(block)}
-                        className="text-2xl md:text-3xl font-bold text-neutral-900 dark:text-neutral-100 mt-6 mb-2.5 pb-1.5 border-b border-black/5 dark:border-white/10 tracking-tight cursor-text hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded-lg px-1 transition-colors"
+                        className="text-2xl md:text-3xl font-bold text-[var(--text-primary)] mt-6 mb-3 pb-2 border-b border-[var(--border-subtle)] tracking-tight cursor-text hover:bg-white/[0.03] rounded-lg px-1 transition-colors"
                         title="Clicca per modificare il titolo"
                       >
                         {renderInlineFormatted(block.rawText.replace(/^#\s*/, ''))}
@@ -2528,7 +2691,7 @@ classDiagram
                       <h2
                         key={block.id}
                         onClick={() => handleStartEditBlock(block)}
-                        className="text-xl md:text-2xl font-semibold text-neutral-800 dark:text-neutral-200 mt-5 mb-2 tracking-tight cursor-text hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded-lg px-1 transition-colors"
+                        className="text-xl md:text-2xl font-semibold text-[var(--text-primary)] mt-5 mb-2 tracking-tight cursor-text hover:bg-white/[0.03] rounded-lg px-1 transition-colors"
                         title="Clicca per modificare"
                       >
                         {renderInlineFormatted(block.rawText.replace(/^##\s*/, ''))}
@@ -2540,11 +2703,47 @@ classDiagram
                       <h3
                         key={block.id}
                         onClick={() => handleStartEditBlock(block)}
-                        className="text-base md:text-lg font-semibold text-neutral-800 dark:text-neutral-200 mt-4 mb-1.5 cursor-text hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded-lg px-1 transition-colors"
+                        className="text-base md:text-lg font-semibold text-[var(--text-primary)] mt-4 mb-1.5 cursor-text hover:bg-white/[0.03] rounded-lg px-1 transition-colors"
                         title="Clicca per modificare"
                       >
                         {renderInlineFormatted(block.rawText.replace(/^###\s*/, ''))}
                       </h3>
+                    );
+
+                  case 'h4':
+                    return (
+                      <h4
+                        key={block.id}
+                        onClick={() => handleStartEditBlock(block)}
+                        className="text-sm md:text-base font-semibold text-[var(--text-primary)] mt-3 mb-1 cursor-text hover:bg-white/[0.03] rounded-lg px-1 transition-colors"
+                        title="Clicca per modificare"
+                      >
+                        {renderInlineFormatted(block.rawText.replace(/^####\s*/, ''))}
+                      </h4>
+                    );
+
+                  case 'h5':
+                    return (
+                      <h5
+                        key={block.id}
+                        onClick={() => handleStartEditBlock(block)}
+                        className="text-xs md:text-sm font-semibold text-[var(--text-secondary)] mt-2.5 mb-1 cursor-text hover:bg-white/[0.03] rounded-lg px-1 transition-colors uppercase tracking-wider"
+                        title="Clicca per modificare"
+                      >
+                        {renderInlineFormatted(block.rawText.replace(/^#####\s*/, ''))}
+                      </h5>
+                    );
+
+                  case 'h6':
+                    return (
+                      <h6
+                        key={block.id}
+                        onClick={() => handleStartEditBlock(block)}
+                        className="text-xs font-semibold text-[var(--text-muted)] mt-2 mb-1 cursor-text hover:bg-white/[0.03] rounded-lg px-1 transition-colors uppercase tracking-wider"
+                        title="Clicca per modificare"
+                      >
+                        {renderInlineFormatted(block.rawText.replace(/^######\s*/, ''))}
+                      </h6>
                     );
 
                   case 'math':
@@ -2579,8 +2778,26 @@ classDiagram
 
                   case 'code': {
                     const lines = block.rawText.split('\n');
-                    const lang = lines[0].replace('```', '').trim();
-                    const codeBody = lines.slice(1, -1).join('\n');
+                    const lang = lines[0].replace('```', '').trim().toLowerCase();
+                    const codeBody = lines.length > 2
+                      ? lines.slice(1, lines[lines.length - 1].trim().startsWith('```') ? -1 : undefined).join('\n')
+                      : lines.slice(1).join('\n');
+
+                    if (lang === 'mermaid') {
+                      return (
+                        <div key={block.id} className="relative group my-3">
+                          <MermaidRenderer code={codeBody} />
+                          <button
+                            onClick={() => handleStartEditBlock(block)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-24 text-[10px] bg-[var(--panel-bg)]/90 hover:bg-[var(--panel-bg)] border border-black/10 dark:border-white/10 text-[var(--text-primary)] px-2 py-0.5 rounded shadow-sm flex items-center gap-1 z-10"
+                            title="Modifica diagramma Mermaid"
+                          >
+                            <span>Modifica Diagramma</span>
+                          </button>
+                        </div>
+                      );
+                    }
+
                     return (
                       <CodeBlockView
                         key={block.id}
@@ -2592,45 +2809,40 @@ classDiagram
                   }
 
                   case 'table': {
-                    const tableLines = block.rawText.split('\n');
-                    const headers = tableLines[0]
-                      .split('|')
-                      .slice(1, -1)
-                      .map((h) => h.trim());
-                    const rows = tableLines.slice(2).map((r) =>
-                      r
-                        .split('|')
-                        .slice(1, -1)
-                        .map((c) => c.trim())
-                    );
+                    const tableLines = block.rawText.split('\n').filter((l) => l.trim().length > 0);
+                    if (tableLines.length < 2) {
+                      return <div key={block.id} className="p-2 font-mono text-xs">{block.rawText}</div>;
+                    }
+                    const headers = parseTableRow(tableLines[0]);
+                    const rows = tableLines.slice(2).map((r) => parseTableRow(r));
                     return (
                       <div
                         key={block.id}
                         onClick={() => handleStartEditBlock(block)}
-                        className="my-4 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] overflow-x-auto shadow-apple-sm cursor-text hover:border-amber-500/30 transition-colors"
+                        className="my-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--card-bg)]/40 backdrop-blur-md overflow-x-auto shadow-2xs cursor-text hover:border-[var(--accent)]/30 transition-colors"
                         title="Clicca per modificare la tabella"
                       >
                         <table className="w-full text-left text-xs border-collapse">
                           <thead>
-                            <tr className="border-b border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] text-neutral-800 dark:text-neutral-200">
+                            <tr className="border-b border-[var(--border-subtle)] bg-[var(--surface-secondary)]/50 text-[var(--text-secondary)]">
                               {headers.map((h, colIdx) => (
                                 <th
                                   key={colIdx}
-                                  className="py-2.5 px-3 font-semibold text-[11px] uppercase tracking-wider"
+                                  className="py-2.5 px-4 font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)]"
                                 >
                                   {renderInlineFormatted(h)}
                                 </th>
                               ))}
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                          <tbody className="divide-y divide-[var(--border-subtle)]">
                             {rows.map((row, rowIdx) => (
                               <tr
                                 key={rowIdx}
-                                className="hover:bg-amber-500/5 dark:hover:bg-amber-400/5 transition-colors"
+                                className="hover:bg-white/[0.04] transition-colors"
                               >
                                 {headers.map((_, colIdx) => (
-                                  <td key={colIdx} className="py-2 px-3 text-neutral-700 dark:text-neutral-300">
+                                  <td key={colIdx} className="py-2.5 px-4 text-[var(--text-primary)]">
                                     {renderInlineFormatted(row[colIdx] || '')}
                                   </td>
                                 ))}
@@ -2654,14 +2866,14 @@ classDiagram
                       <blockquote
                         key={block.id}
                         onClick={() => handleStartEditBlock(block)}
-                        className={`my-3 p-3.5 rounded-2xl border-l-4 text-xs md:text-sm leading-relaxed cursor-text ${
+                        className={`my-3 p-4 rounded-2xl border text-xs md:text-sm leading-relaxed cursor-text transition-all ${
                           isNoteAlert
-                            ? 'bg-blue-500/10 border-blue-500 text-blue-900 dark:text-blue-200'
+                            ? 'bg-[#0A84FF]/10 border-[#0A84FF]/25 text-[#0A84FF] dark:text-[#5DE6FF]'
                             : isTipAlert
-                            ? 'bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-200'
+                            ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400'
                             : isWarnAlert
-                            ? 'bg-amber-500/10 border-amber-500 text-amber-900 dark:text-amber-200'
-                            : 'bg-black/5 dark:bg-white/5 border-neutral-400 text-neutral-700 dark:text-neutral-300'
+                            ? 'bg-amber-500/10 border-amber-500/25 text-amber-600 dark:text-amber-400'
+                            : 'bg-[var(--card-bg)]/50 border-[var(--border-subtle)] text-[var(--text-primary)] backdrop-blur-md'
                         }`}
                         title="Clicca per modificare la citazione"
                       >
@@ -2671,9 +2883,9 @@ classDiagram
                   }
 
                   case 'task': {
-                    const match = block.rawText.match(/^(\s*)[-*]\s+\[([ xX])\]\s+(.+)$/);
-                    if (!match) return null;
-                    const isChecked = match[2].toLowerCase() === 'x';
+                    const match = block.rawText.match(/^(\s*)[-*]\s+\[([ xX])\]\s*(.*)$/);
+                    const isChecked = match ? match[2].toLowerCase() === 'x' : false;
+                    const taskText = match ? match[3] : block.rawText.replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '');
                     const currentIdx = taskItemCounter++;
                     return (
                       <div
@@ -2695,23 +2907,32 @@ classDiagram
                           }`}
                           title="Clicca per modificare il testo del task"
                         >
-                          {renderInlineFormatted(match[3])}
+                          {renderInlineFormatted(taskText || ' ')}
                         </span>
                       </div>
                     );
                   }
 
                   case 'list': {
-                    const cleanList = block.rawText.replace(/^\s*(?:[-*]|\d+\.)\s+/, '');
+                    const cleanList = block.rawText.replace(/^\s*(?:[-*+]|\d+[.)]|[a-zA-Z][.)])\s+/, '');
+                    const isNumberedOrLettered = block.listMarker && !/^[-*+]$/.test(block.listMarker);
                     return (
-                      <li
+                      <div
                         key={block.id}
                         onClick={() => handleStartEditBlock(block)}
-                        className="ml-5 list-disc text-xs md:text-sm text-neutral-700 dark:text-neutral-300 my-1 leading-relaxed cursor-text hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded px-1 transition-colors"
+                        style={{ paddingLeft: `${(block.indentLevel ?? 0) * 1.5 + 0.5}rem` }}
+                        className="flex items-start text-xs md:text-sm text-neutral-700 dark:text-neutral-300 my-1 leading-relaxed cursor-text hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded px-1 transition-colors"
                         title="Clicca per modificare"
                       >
-                        {renderInlineFormatted(cleanList)}
-                      </li>
+                        {isNumberedOrLettered ? (
+                          <span className="font-mono text-neutral-500 dark:text-neutral-400 font-semibold mr-2 shrink-0 select-none">
+                            {block.listMarker}
+                          </span>
+                        ) : (
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] mt-2 mr-2.5 shrink-0" />
+                        )}
+                        <span className="flex-1 min-w-0">{renderInlineFormatted(cleanList)}</span>
+                      </div>
                     );
                   }
 
@@ -2731,7 +2952,14 @@ classDiagram
                       </p>
                     );
                 }
-              })}
+              };
+
+              return (
+                <ErrorBoundary key={block.id} rawFallbackContent={block.rawText}>
+                  {renderLiveBlock()}
+                </ErrorBoundary>
+              );
+            })}
 
               {/* Add paragraph button at bottom of note */}
               <div className="pt-4 pb-12 flex justify-start">
@@ -2750,7 +2978,7 @@ classDiagram
         {/* 2. Mode 'split': Source editor on left, formatted preview on right */}
         {mode === 'split' && (
           <>
-            <div className="w-1/2 h-full flex flex-col p-6 overflow-y-auto border-r border-black/5 dark:border-white/10 bg-black/[0.01] dark:bg-white/[0.01]">
+            <div className="w-1/2 h-full flex flex-col p-6 overflow-y-auto border-r border-black/5 dark:border-white/10 bg-black/[0.01] dark:bg-white/[0.01] editor-content-area">
               <textarea
                 ref={textareaRef}
                 value={activeNoteContent}
@@ -2762,48 +2990,166 @@ classDiagram
                 spellCheck={false}
               />
             </div>
-            <div className="w-1/2 h-full p-6 overflow-y-auto">
+            <div className="w-1/2 h-full p-6 overflow-y-auto editor-content-area">
               <div className="max-w-xl mx-auto space-y-2">
                 {parsedBlocks.map((b) => {
-                  if (b.type === 'code') {
-                    const lines = b.rawText.split('\n');
-                    const lang = lines[0].replace('```', '').trim();
-                    const codeBody = lines.slice(1, -1).join('\n');
-                    return <CodeBlockView key={b.id} lang={lang} code={codeBody} />;
-                  }
-                  if (b.type === 'math') {
-                    return renderMathBlock(b.rawText, b.id);
-                  }
-                  if (b.type === 'dataview') {
+                  const renderSplitBlock = () => {
+                    if (b.type === 'code') {
+                      const lines = b.rawText.split('\n');
+                      const lang = lines[0].replace('```', '').trim().toLowerCase();
+                      const codeBody = lines.length > 2
+                        ? lines.slice(1, lines[lines.length - 1].trim().startsWith('```') ? -1 : undefined).join('\n')
+                        : lines.slice(1).join('\n');
+
+                      if (lang === 'mermaid') {
+                        return <MermaidRenderer key={b.id} code={codeBody} />;
+                      }
+
+                      return <CodeBlockView key={b.id} lang={lang} code={codeBody} />;
+                    }
+                    if (b.type === 'math') {
+                      return renderMathBlock(b.rawText, b.id);
+                    }
+                    if (b.type === 'dataview') {
+                      return (
+                        <DataviewRenderer
+                          key={b.id}
+                          queryText={b.rawText.replace(/^```dataview\s*/i, '').replace(/```$/, '').trim()}
+                        />
+                      );
+                    }
+                    if (b.type === 'h1') {
+                      return (
+                        <h1 key={b.id} className="text-2xl font-bold mt-4 mb-2 pb-1 border-b border-black/5 dark:border-white/10 tracking-tight">
+                          {renderInlineFormatted(b.rawText.replace(/^#\s*/, ''))}
+                        </h1>
+                      );
+                    }
+                    if (b.type === 'h2') {
+                      return (
+                        <h2 key={b.id} className="text-xl font-semibold mt-3 mb-1.5 tracking-tight">
+                          {renderInlineFormatted(b.rawText.replace(/^##\s*/, ''))}
+                        </h2>
+                      );
+                    }
+                    if (b.type === 'h3') {
+                      return (
+                        <h3 key={b.id} className="text-base font-semibold mt-2.5 mb-1">
+                          {renderInlineFormatted(b.rawText.replace(/^###\s*/, ''))}
+                        </h3>
+                      );
+                    }
+                    if (b.type === 'h4') {
+                      return (
+                        <h4 key={b.id} className="text-sm md:text-base font-semibold mt-2 mb-1">
+                          {renderInlineFormatted(b.rawText.replace(/^####\s*/, ''))}
+                        </h4>
+                      );
+                    }
+                    if (b.type === 'h5') {
+                      return (
+                        <h5 key={b.id} className="text-xs md:text-sm font-semibold mt-1.5 mb-1 uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
+                          {renderInlineFormatted(b.rawText.replace(/^#####\s*/, ''))}
+                        </h5>
+                      );
+                    }
+                    if (b.type === 'h6') {
+                      return (
+                        <h6 key={b.id} className="text-xs font-semibold mt-1.5 mb-1 uppercase tracking-wider text-neutral-500">
+                          {renderInlineFormatted(b.rawText.replace(/^######\s*/, ''))}
+                        </h6>
+                      );
+                    }
+                    if (b.type === 'list') {
+                      const cleanList = b.rawText.replace(/^\s*(?:[-*+]|\d+[.)]|[a-zA-Z][.)])\s+/, '');
+                      const isNumberedOrLettered = b.listMarker && !/^[-*+]$/.test(b.listMarker);
+                      return (
+                        <div
+                          key={b.id}
+                          style={{ paddingLeft: `${(b.indentLevel ?? 0) * 1.5 + 0.5}rem` }}
+                          className="flex items-start text-xs md:text-sm text-neutral-700 dark:text-neutral-300 my-1 leading-relaxed"
+                        >
+                          {isNumberedOrLettered ? (
+                            <span className="font-mono text-neutral-500 font-semibold mr-2 shrink-0 select-none">
+                              {b.listMarker}
+                            </span>
+                          ) : (
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] mt-2 mr-2.5 shrink-0" />
+                          )}
+                          <span className="flex-1 min-w-0">{renderInlineFormatted(cleanList)}</span>
+                        </div>
+                      );
+                    }
+                    if (b.type === 'table') {
+                      const tableLines = b.rawText.split('\n').filter((l) => l.trim().length > 0);
+                      if (tableLines.length < 2) {
+                        return <div key={b.id} className="p-2 font-mono text-xs">{b.rawText}</div>;
+                      }
+                      const headers = parseTableRow(tableLines[0]);
+                      const rows = tableLines.slice(2).map((r) => parseTableRow(r));
+                      return (
+                        <div key={b.id} className="my-3 rounded-xl border border-black/10 dark:border-white/10 overflow-x-auto shadow-apple-sm">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="border-b border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03]">
+                                {headers.map((h, colIdx) => (
+                                  <th key={colIdx} className="py-2 px-3 font-semibold text-[11px] uppercase tracking-wider">
+                                    {renderInlineFormatted(h)}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                              {rows.map((row, rowIdx) => (
+                                <tr key={rowIdx}>
+                                  {headers.map((_, colIdx) => (
+                                    <td key={colIdx} className="py-1.5 px-3 text-neutral-700 dark:text-neutral-300">
+                                      {renderInlineFormatted(row[colIdx] || '')}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    }
+                    if (b.type === 'quote') {
+                      const cleanQuote = b.rawText.split('\n').map((l) => l.replace(/^>\s*/, '')).join(' ');
+                      return (
+                        <blockquote key={b.id} className="my-2 p-3 rounded-xl border-l-4 border-amber-500 bg-amber-500/10 text-xs md:text-sm">
+                          {renderInlineFormatted(cleanQuote)}
+                        </blockquote>
+                      );
+                    }
+                    if (b.type === 'task') {
+                      const match = b.rawText.match(/^(\s*)[-*]\s+\[([ xX])\]\s*(.*)$/);
+                      const isChecked = match ? match[2].toLowerCase() === 'x' : false;
+                      const taskText = match ? match[3] : b.rawText.replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '');
+                      return (
+                        <div key={b.id} className="flex items-center space-x-2 my-1 text-xs md:text-sm">
+                          <input type="checkbox" checked={isChecked} readOnly className="rounded text-amber-500 h-3.5 w-3.5" />
+                          <span className={isChecked ? 'line-through text-neutral-400' : ''}>
+                            {renderInlineFormatted(taskText || ' ')}
+                          </span>
+                        </div>
+                      );
+                    }
+                    if (b.type === 'hr') {
+                      return <hr key={b.id} className="my-4 border-t border-black/10 dark:border-white/10" />;
+                    }
                     return (
-                      <DataviewRenderer
-                        key={b.id}
-                        queryText={b.rawText.replace(/^```dataview\s*/i, '').replace(/```$/, '').trim()}
-                      />
+                      <p key={b.id} className="text-xs md:text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed my-1">
+                        {renderInlineFormatted(b.rawText)}
+                      </p>
                     );
-                  }
-                  if (b.type === 'h1') {
-                    return (
-                      <h1 key={b.id} className="text-2xl font-bold mt-4 mb-2 pb-1 border-b border-black/5 dark:border-white/10 tracking-tight">
-                        {renderInlineFormatted(b.rawText.replace(/^#\s*/, ''))}
-                      </h1>
-                    );
-                  }
-                  if (b.type === 'h2') {
-                    return (
-                      <h2 key={b.id} className="text-xl font-semibold mt-3 mb-1.5 tracking-tight">
-                        {renderInlineFormatted(b.rawText.replace(/^##\s*/, ''))}
-                      </h2>
-                    );
-                  }
-                  if (b.type === 'h3') {
-                    return (
-                      <h3 key={b.id} className="text-base font-semibold mt-2.5 mb-1">
-                        {renderInlineFormatted(b.rawText.replace(/^###\s*/, ''))}
-                      </h3>
-                    );
-                  }
-                  return <div key={b.id}>{renderInlineFormatted(b.rawText)}</div>;
+                  };
+
+                  return (
+                    <ErrorBoundary key={b.id} rawFallbackContent={b.rawText}>
+                      {renderSplitBlock()}
+                    </ErrorBoundary>
+                  );
                 })}
               </div>
             </div>
@@ -2812,7 +3158,7 @@ classDiagram
 
         {/* 3. Mode 'source': Pure markdown source with proportional readable typography */}
         {mode === 'source' && (
-          <div className="w-full h-full p-8 overflow-y-auto relative">
+          <div className="w-full h-full p-8 overflow-y-auto relative editor-content-area">
             <div
               style={contentContainerStyle}
               className={`w-full h-full mx-auto relative transition-[max-width] ${

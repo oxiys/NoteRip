@@ -16,15 +16,22 @@ export const InspectorPanel: React.FC = () => {
     useVaultStore();
 
   const currentNote = React.useMemo(() => {
-    return notes.find((n) => n.path === activeNotePath) || null;
+    if (!activeNotePath) return null;
+    const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
+    const normalizedActive = norm(activeNotePath);
+    return notes.find((n) => norm(n.path) === normalizedActive) || null;
   }, [notes, activeNotePath]);
 
   if (!currentNote) {
     return null;
   }
 
-  const wordCount = currentNote.content.trim() ? currentNote.content.trim().split(/\s+/).length : 0;
-  const charCount = currentNote.content.length;
+  const backlinks = currentNote.backlinks || [];
+  const outlinks = currentNote.outlinks || [];
+  const tags = currentNote.tags || [];
+  const noteContent = currentNote.content || '';
+  const wordCount = noteContent.trim() ? noteContent.trim().split(/\s+/).length : 0;
+  const charCount = noteContent.length;
 
   return (
     <>
@@ -32,14 +39,14 @@ export const InspectorPanel: React.FC = () => {
       {!isInspectorOpen && (
         <button
           onClick={toggleInspector}
-          className="absolute bottom-4 right-4 z-30 flex items-center space-x-2 px-3 py-1.5 rounded-full backdrop-blur-xl bg-[var(--panel-bg)]/90 dark:bg-[var(--panel-bg)]/90 border border-black/10 dark:border-white/15 shadow-apple-md hover:shadow-apple-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/50 transition-all duration-300 ease-out group hover:scale-[1.03] active:scale-[0.98]"
+          className="absolute bottom-4 right-4 z-30 flex items-center space-x-2 px-3 py-1.5 rounded-full backdrop-blur-xl bg-[var(--panel-bg)]/90 border border-[var(--border-subtle)] shadow-apple-md hover:shadow-apple-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/50 transition-all duration-300 ease-out group hover:scale-[1.03] active:scale-[0.98] macos-clickable"
           title="Espandi Connessioni & Info (Backlinks)"
         >
           <div className="flex items-center space-x-1.5 text-[var(--accent)]">
             <Link2 size={13} />
-            <span className="font-semibold text-[11px]">{currentNote.backlinks.length}</span>
+            <span className="font-semibold text-[11px]">{backlinks.length}</span>
           </div>
-          <span className="w-px h-3 bg-black/10 dark:bg-white/15" />
+          <span className="w-px h-3 bg-[var(--border-subtle)]" />
           <span className="text-[11px]">Connessioni</span>
           <ChevronLeft
             size={13}
@@ -50,19 +57,19 @@ export const InspectorPanel: React.FC = () => {
 
       {/* Floating Card Inspector (Compresses smoothly towards the right edge of the screen) */}
       <div
-        className={`absolute bottom-4 right-4 z-40 w-80 h-[460px] max-h-[calc(100vh-100px)] flex flex-col rounded-2xl apple-card-item backdrop-blur-2xl bg-[var(--panel-bg)]/95 dark:bg-[var(--panel-bg)]/92 border border-black/10 dark:border-white/15 shadow-2xl shadow-black/25 dark:shadow-black/60 select-none overflow-hidden transition-all duration-300 cubic-bezier(0.16, 1, 0.3, 1) ${
+        className={`absolute bottom-4 right-4 z-40 w-80 h-[460px] max-h-[calc(100vh-100px)] flex flex-col rounded-2xl apple-card-item backdrop-blur-2xl bg-[var(--card-bg)]/95 border border-[var(--border-subtle)] shadow-apple-popover select-none overflow-hidden transition-all duration-300 cubic-bezier(0.16, 1, 0.3, 1) ${
           isInspectorOpen
             ? 'translate-x-0 opacity-100 scale-100 pointer-events-auto'
             : 'translate-x-[calc(100%+24px)] opacity-0 scale-95 pointer-events-none'
         }`}
       >
         {/* Floating Card Header */}
-        <div className="px-3.5 py-2.5 border-b border-black/5 dark:border-white/10 flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.02]">
+        <div className="px-3.5 py-2.5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.02]">
           <div className="flex items-center space-x-2">
             <h3 className="text-xs font-semibold text-[var(--text-primary)]">
               Connessioni & Info
             </h3>
-            <span className="text-[10px] text-[var(--text-muted)] px-1.5 py-0.5 rounded-full bg-black/5 dark:bg-white/5 font-mono">
+            <span className="text-[10px] text-[var(--text-muted)] px-1.5 py-0.5 rounded-full bg-[var(--surface-secondary)] font-mono">
               {wordCount} parole
             </span>
           </div>
@@ -86,16 +93,16 @@ export const InspectorPanel: React.FC = () => {
           <div>
             <div className="flex items-center space-x-1.5 text-xs font-semibold text-[var(--accent-blue)] mb-2">
               <ArrowDownLeft size={14} />
-              <span>Backlinks ({currentNote.backlinks.length})</span>
+              <span>Backlinks ({backlinks.length})</span>
             </div>
 
-            {currentNote.backlinks.length === 0 ? (
+            {backlinks.length === 0 ? (
               <p className="text-[11px] text-[var(--text-muted)] italic p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
                 Nessun'altra nota collega questo appunto. Usa <span className="font-mono text-[var(--accent)]">[[{currentNote.title}]]</span> altrove per collegarlo.
               </p>
             ) : (
               <div className="space-y-1">
-                {currentNote.backlinks.map((target) => (
+                {backlinks.map((target) => (
                   <button
                     key={target}
                     onClick={() => navigateToWikiLink(target)}
@@ -116,16 +123,16 @@ export const InspectorPanel: React.FC = () => {
           <div>
             <div className="flex items-center space-x-1.5 text-xs font-semibold text-[var(--accent)] mb-2">
               <ArrowUpRight size={14} />
-              <span>Collegamenti Uscenti ({currentNote.outlinks.length})</span>
+              <span>Collegamenti Uscenti ({outlinks.length})</span>
             </div>
 
-            {currentNote.outlinks.length === 0 ? (
+            {outlinks.length === 0 ? (
               <p className="text-[11px] text-[var(--text-muted)] italic p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
                 Nessun link <span className="font-mono text-[var(--accent)]">[[WikiLink]]</span> presente in questa nota.
               </p>
             ) : (
               <div className="space-y-1">
-                {currentNote.outlinks.map((link) => (
+                {outlinks.map((link) => (
                   <button
                     key={link}
                     onClick={() => navigateToWikiLink(link)}
@@ -144,14 +151,14 @@ export const InspectorPanel: React.FC = () => {
           </div>
 
           {/* Tags Section */}
-          {currentNote.tags.length > 0 && (
+          {tags.length > 0 && (
             <div>
               <div className="flex items-center space-x-1.5 text-xs font-semibold text-[var(--text-primary)] mb-2">
                 <Hash size={14} className="text-[var(--accent)]" />
                 <span>Tag</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {currentNote.tags.map((tag) => (
+                {tags.map((tag) => (
                   <span
                     key={tag}
                     className="px-2 py-0.5 rounded-full text-[11px] bg-black/5 dark:bg-white/10 text-[var(--text-secondary)] font-mono font-medium"

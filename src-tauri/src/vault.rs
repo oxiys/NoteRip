@@ -109,6 +109,19 @@ pub fn read_note_content(file_path: &str) -> Result<String, String> {
     fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))
 }
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+pub fn create_silent_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 pub fn write_note_content(file_path: &str, content: &str) -> Result<(), String> {
     let path = Path::new(file_path);
     if let Some(parent) = path.parent() {
@@ -117,19 +130,39 @@ pub fn write_note_content(file_path: &str, content: &str) -> Result<(), String> 
         }
     }
 
-    // Robust retry loop (3 attempts with backoff) to handle transient Windows Defender / indexer file locks
+    // Robust retry loop (5 attempts with exponential backoff)
+    // Handles transient Windows Defender locks, search indexers, and file system latency
     let mut last_err = None;
-    for attempt in 0..3 {
+    for attempt in 0..5 {
+        // Try atomic write via temp file first
+        let tmp_path = path.with_extension(format!("tmp.{}", std::process::id()));
+        if let Ok(_) = fs::write(&tmp_path, content) {
+            if fs::rename(&tmp_path, path).is_ok() {
+                return Ok(());
+            }
+            let _ = fs::remove_file(&tmp_path);
+        }
+
+        // Fallback to direct write
         match fs::write(path, content) {
             Ok(_) => return Ok(()),
             Err(e) => {
                 last_err = Some(e);
-                std::thread::sleep(std::time::Duration::from_millis(50 * (attempt + 1)));
+                std::thread::sleep(std::time::Duration::from_millis(60 * (attempt + 1) * (attempt + 1)));
             }
         }
     }
 
-    Err(format!("Errore scrittura file: {}", last_err.unwrap()))
+    let err = last_err.unwrap();
+    let err_code = err.raw_os_error();
+    if err_code == Some(5) {
+        Err(format!(
+            "Errore di scrittura: Accesso negato (Codice 5). Windows Defender o 'Accesso alle cartelle protetto' ha bloccato la scrittura su '{}'. Consenti l'applicazione NoteRip nelle impostazioni di Sicurezza di Windows o usa una cartella non protetta (es. C:\\NoteRip).",
+            file_path
+        ))
+    } else {
+        Err(format!("Errore scrittura file: {}", err))
+    }
 }
 
 pub fn create_new_note(vault_path: &str, rel_path: &str, content: Option<&str>) -> Result<String, String> {
@@ -206,7 +239,7 @@ pub fn git_sync_repo(vault_path: &str, commit_message: Option<&str>) -> Result<G
     }
 
     // 1. Git add .
-    let add_status = std::process::Command::new("git")
+    let add_status = create_silent_command("git")
         .arg("add")
         .arg(".")
         .current_dir(path)
@@ -218,7 +251,7 @@ pub fn git_sync_repo(vault_path: &str, commit_message: Option<&str>) -> Result<G
     }
 
     // 2. Git status --porcelain
-    let status_out = std::process::Command::new("git")
+    let status_out = create_silent_command("git")
         .args(["status", "--porcelain"])
         .current_dir(path)
         .output()
@@ -237,7 +270,7 @@ pub fn git_sync_repo(vault_path: &str, commit_message: Option<&str>) -> Result<G
 
     // 3. Git commit
     let msg = commit_message.unwrap_or("Auto-sync notes via NoteRip");
-    let commit_out = std::process::Command::new("git")
+    let commit_out = create_silent_command("git")
         .args(["commit", "-m", msg])
         .current_dir(path)
         .output()
@@ -249,7 +282,7 @@ pub fn git_sync_repo(vault_path: &str, commit_message: Option<&str>) -> Result<G
     }
 
     // 4. Git push (optional / silent attempt)
-    let push_out = std::process::Command::new("git")
+    let push_out = create_silent_command("git")
         .args(["push"])
         .current_dir(path)
         .output();
@@ -301,7 +334,7 @@ pub fn run_code_snippet(lang: &str, code: &str) -> Result<CodeRunResult, String>
             let out_file = temp_dir.join("main.exe");
             std::fs::write(&src_file, code).map_err(|e| format!("Failed to write source: {e}"))?;
 
-            let comp_res = std::process::Command::new("gcc")
+            let comp_res = create_silent_command("gcc")
                 .args([src_file.to_str().unwrap(), "-o", out_file.to_str().unwrap()])
                 .output();
 
@@ -318,7 +351,7 @@ pub fn run_code_snippet(lang: &str, code: &str) -> Result<CodeRunResult, String>
                         });
                     }
 
-                    let run_out = std::process::Command::new(&out_file).output();
+                    let run_out = create_silent_command(&out_file).output();
                     match run_out {
                         Ok(out) => Ok(CodeRunResult {
                             success: out.status.success(),
@@ -331,7 +364,7 @@ pub fn run_code_snippet(lang: &str, code: &str) -> Result<CodeRunResult, String>
                     }
                 }
                 Err(_) => {
-                    let clang_res = std::process::Command::new("clang")
+                    let clang_res = create_silent_command("clang")
                         .args([src_file.to_str().unwrap(), "-o", out_file.to_str().unwrap()])
                         .output();
                     match clang_res {
@@ -345,7 +378,7 @@ pub fn run_code_snippet(lang: &str, code: &str) -> Result<CodeRunResult, String>
                                     execution_time_ms: start_time.elapsed().as_millis() as u64,
                                 });
                             }
-                            let run_out = std::process::Command::new(&out_file).output();
+                            let run_out = create_silent_command(&out_file).output();
                             match run_out {
                                 Ok(out) => Ok(CodeRunResult {
                                     success: out.status.success(),
@@ -388,7 +421,7 @@ pub fn run_code_snippet(lang: &str, code: &str) -> Result<CodeRunResult, String>
             let src_file = temp_dir.join(format!("{class_name}.java"));
             std::fs::write(&src_file, code).map_err(|e| format!("Failed to write source: {e}"))?;
 
-            let javac_res = std::process::Command::new("javac")
+            let javac_res = create_silent_command("javac")
                 .arg(&src_file)
                 .current_dir(&temp_dir)
                 .output();
@@ -405,7 +438,7 @@ pub fn run_code_snippet(lang: &str, code: &str) -> Result<CodeRunResult, String>
                         });
                     }
 
-                    let java_res = std::process::Command::new("java")
+                    let java_res = create_silent_command("java")
                         .arg(&class_name)
                         .current_dir(&temp_dir)
                         .output();

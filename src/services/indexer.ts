@@ -84,7 +84,7 @@ export function extractPreview(content: string, title: string): string {
 /**
  * Computes bidirectional backlinks across all notes in the vault
  */
-export function computeBidirectionalLinks(notes: Map<string, { path: string; title: string; rel_path: string; content: string; updated_at: number; folder: string }>): NoteItem[] {
+export function computeBidirectionalLinks(notes: Map<string, { path: string; title: string; rel_path: string; content: string; updated_at: number; folder: string; folderDepth?: number }>): NoteItem[] {
   // First pass: extract outlinks for each note
   const rawList: Array<{
     path: string;
@@ -93,6 +93,7 @@ export function computeBidirectionalLinks(notes: Map<string, { path: string; tit
     content: string;
     updated_at: number;
     folder: string;
+    folderDepth?: number;
     tags: string[];
     outlinks: string[];
     preview: string;

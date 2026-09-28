@@ -3,41 +3,17 @@
 @tailwind utilities;
 
 @layer base {
-  /* Default: Apple Light Theme */
-  :root,
-  .theme-light,
-  [data-theme="apple-light"] {
-    --bg-app: #F5F5F7;
-    --sidebar-bg: rgba(246, 246, 246, 0.82);
-    --panel-bg: rgba(255, 255, 255, 0.75);
-    --card-bg: rgba(255, 255, 255, 0.88);
-    --card-hover: rgba(255, 255, 255, 0.98);
-    --border-subtle: rgba(0, 0, 0, 0.08);
-    --border-strong: rgba(0, 0, 0, 0.16);
-    --text-primary: #1D1D1F;
-    --text-secondary: #86868B;
-    --text-muted: #A1A1A6;
-    --accent: #EAA824; /* Apple Yellow */
-    --accent-hover: #D69315;
-    --accent-subtle: rgba(234, 168, 36, 0.12);
-    --accent-blue: #007AFF;
-    --accent-teal: #30B0C7;
-    --accent-purple: #AF52DE;
-    --scrollbar-thumb: rgba(0, 0, 0, 0.18);
-    --scrollbar-hover: rgba(0, 0, 0, 0.32);
-    --code-bg: #F0F0F2;
-    --selection-bg: rgba(234, 168, 36, 0.25);
-  }
-
   /* Catppuccin Mocha - Soothing, Zero-Eye-Strain Dark Palette */
+  :root,
   .theme-mocha,
   [data-theme="catppuccin-mocha"],
-  .dark:not(.theme-dark):not(.theme-latte):not(.theme-light) {
+  .dark:not(.theme-latte) {
     --bg-app: #1e1e2e;          /* Base */
     --sidebar-bg: rgba(24, 24, 37, 0.88); /* Mantle */
     --panel-bg: rgba(30, 30, 46, 0.82);   /* Base vibrant */
     --card-bg: rgba(49, 50, 68, 0.65);    /* Surface0 */
     --card-hover: rgba(69, 71, 90, 0.8);  /* Surface1 */
+    --surface-secondary: #313244;
     --border-subtle: rgba(205, 214, 244, 0.09); /* Text with low opacity */
     --border-strong: rgba(180, 190, 254, 0.22); /* Lavender border */
     --text-primary: #cdd6f4;      /* Text */
@@ -65,6 +41,7 @@
     --panel-bg: rgba(239, 241, 245, 0.85);   /* Base vibrant */
     --card-bg: rgba(255, 255, 255, 0.75);
     --card-hover: rgba(255, 255, 255, 0.95);
+    --surface-secondary: #dce0e8;
     --border-subtle: rgba(76, 79, 105, 0.1);
     --border-strong: rgba(136, 57, 239, 0.25);
     --text-primary: #4c4f69;      /* Text */
@@ -82,49 +59,29 @@
     --selection-bg: rgba(136, 57, 239, 0.2);
   }
 
-  /* Apple Dark Theme */
-  .theme-dark,
-  [data-theme="apple-dark"] {
-    --bg-app: #121214;
-    --sidebar-bg: rgba(26, 26, 28, 0.85);
-    --panel-bg: rgba(32, 32, 36, 0.8);
-    --card-bg: rgba(38, 38, 42, 0.8);
-    --card-hover: rgba(48, 48, 54, 0.9);
-    --border-subtle: rgba(255, 255, 255, 0.09);
-    --border-strong: rgba(255, 255, 255, 0.18);
-    --text-primary: #F5F5F7;
-    --text-secondary: #98989D;
-    --text-muted: #636366;
-    --accent: #F59E0B;
-    --accent-hover: #D97706;
-    --accent-subtle: rgba(245, 158, 11, 0.16);
-    --accent-blue: #0A84FF;
-    --accent-teal: #5DE6FF;
-    --accent-purple: #BF5AF2;
-    --scrollbar-thumb: rgba(255, 255, 255, 0.18);
-    --scrollbar-hover: rgba(255, 255, 255, 0.35);
-    --code-bg: #1c1c1e;
-    --selection-bg: rgba(245, 158, 11, 0.28);
-  }
-
   body {
-    @apply antialiased select-none font-sans text-sm;
+    @apply antialiased select-none text-sm;
     background-color: var(--bg-app);
     color: var(--text-primary);
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.18s ease, color 0.18s ease;
+  }
+
+  .editor-content-area {
+    font-family: var(--editor-font-family, inherit);
+    font-size: var(--editor-font-size, 14px);
   }
 
   ::selection {
     background-color: var(--selection-bg);
   }
 
-  /* Custom Smooth Scrollbars */
+  /* Thin Overlay Scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
@@ -134,7 +91,7 @@
   ::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
     border-radius: 9999px;
-    transition: background-color 0.2s ease;
+    transition: background-color 0.15s ease;
   }
 
   ::-webkit-scrollbar-thumb:hover {
@@ -142,21 +99,23 @@
   }
 }
 
-/* Glassmorphic Components with Theme Sensitivity */
 @layer components {
+  /* Panel & Card Utility Classes */
   .apple-vibrant {
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
   }
 
   .apple-vibrant-subtle {
-    backdrop-filter: blur(14px) saturate(150%);
-    -webkit-backdrop-filter: blur(14px) saturate(150%);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
   }
 
   .apple-sidebar-panel {
     background: var(--sidebar-bg);
     border-color: var(--border-subtle);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
   }
 
   .apple-content-panel {
@@ -167,7 +126,8 @@
   .apple-card-item {
     background: var(--card-bg);
     border: 1px solid var(--border-subtle);
-    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 14px;
+    transition: all 0.15s ease;
   }
 
   .apple-card-item:hover {
@@ -175,18 +135,42 @@
     border-color: var(--border-strong);
   }
 
+  /* Clickable Micro-Interaction */
+  .macos-clickable {
+    transition: all 140ms ease;
+  }
+  .macos-clickable:active {
+    transform: scale(0.98);
+  }
+
+  /* Active Tree Item */
+  .tree-item-active {
+    background-color: var(--accent) !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+  .tree-item-active svg {
+    color: #FFFFFF !important;
+  }
+
+  /* Shadow utilities used in components */
+  .shadow-apple-sm { box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+  .shadow-apple-md { box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
+  .shadow-apple-lg { box-shadow: 0 8px 30px rgba(0,0,0,0.22); }
+  .shadow-apple-popover { box-shadow: 0 8px 32px rgba(0,0,0,0.28); }
+
   /* WikiLink Badges tailored per theme */
   .wikilink-badge {
     @apply inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-medium cursor-pointer transition-all duration-150;
     background-color: var(--accent-subtle);
     color: var(--accent);
-    border: 1px solid rgba(234, 168, 36, 0.25);
+    border: 1px solid rgba(203, 166, 247, 0.25);
   }
 
   .theme-mocha .wikilink-badge,
   [data-theme="catppuccin-mocha"] .wikilink-badge {
     background-color: rgba(203, 166, 247, 0.14);
-    color: #cba6f7; /* Mauve */
+    color: #cba6f7;
     border: 1px solid rgba(203, 166, 247, 0.28);
   }
 
@@ -211,19 +195,6 @@
     transform: translateY(-0.5px);
   }
 
-  .theme-dark .wikilink-badge,
-  [data-theme="apple-dark"] .wikilink-badge {
-    background-color: rgba(245, 158, 11, 0.18);
-    color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.3);
-  }
-
-  .theme-dark .wikilink-badge:hover,
-  [data-theme="apple-dark"] .wikilink-badge:hover {
-    background-color: rgba(245, 158, 11, 0.3);
-    transform: translateY(-0.5px);
-  }
-
   /* KaTeX Theme Adaptations */
   .katex-display {
     margin: 0.5em 0 !important;
@@ -233,7 +204,6 @@
   [data-theme="catppuccin-mocha"] .katex {
     color: #cdd6f4;
   }
-
   .theme-mocha .katex .mord,
   .theme-mocha .katex .mbin,
   .theme-mocha .katex .mrel,
@@ -242,7 +212,6 @@
   [data-theme="catppuccin-mocha"] .katex .mrel {
     color: #cdd6f4;
   }
-
   .theme-mocha .katex .accent,
   .theme-mocha .katex .sqrt,
   [data-theme="catppuccin-mocha"] .katex .accent,
@@ -250,82 +219,29 @@
     color: #b4befe;
   }
 
-  .theme-mocha .katex-error,
-  [data-theme="catppuccin-mocha"] .katex-error {
-    color: #f38ba8 !important;
-    background: rgba(243, 139, 168, 0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.85em;
-  }
-
-  /* Prism Syntax Highlighting (Tailored for C, C++, Java, Rust, JS/TS) */
+  /* Prism Syntax Highlighting */
   code[class*="language-"],
   pre[class*="language-"] {
     color: #cdd6f4;
     text-shadow: none;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
   }
 
-  .token.comment,
-  .token.prolog,
-  .token.doctype,
-  .token.cdata {
-    color: #6c7086;
-    font-style: italic;
-  }
+  /* Catppuccin Mocha Prism Highlighting */
+  .theme-mocha .token.comment { color: #6c7086; font-style: italic; }
+  .theme-mocha .token.punctuation { color: #9399b2; }
+  .theme-mocha .token.number { color: #fab387; }
+  .theme-mocha .token.string { color: #a6e3a1; }
+  .theme-mocha .token.keyword { color: #cba6f7; font-weight: 600; }
+  .theme-mocha .token.function { color: #89b4fa; }
+  .theme-mocha .token.class-name { color: #f9e2af; }
 
-  .token.punctuation {
-    color: #9399b2;
-  }
-
-  .token.property,
-  .token.tag,
-  .token.boolean,
-  .token.number,
-  .token.constant,
-  .token.symbol {
-    color: #fab387;
-  }
-
-  .token.selector,
-  .token.attr-name,
-  .token.string,
-  .token.char,
-  .token.builtin {
-    color: #a6e3a1;
-  }
-
-  .token.operator,
-  .token.entity,
-  .token.url {
-    color: #89dceb;
-  }
-
-  .token.atrule,
-  .token.attr-value,
-  .token.keyword {
-    color: #cba6f7;
-    font-weight: 600;
-  }
-
-  .token.function {
-    color: #89b4fa;
-  }
-
-  .token.class-name {
-    color: #f9e2af;
-    font-weight: 500;
-  }
-
-  .token.regex,
-  .token.important,
-  .token.variable {
-    color: #f5c2e7;
-  }
-
-  /* Mermaid SVG diagram custom layout polish */
-  .mermaid-svg-container svg {
-    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.15));
-  }
+  /* Catppuccin Latte Prism Highlighting */
+  .theme-latte .token.comment { color: #9ca0b0; font-style: italic; }
+  .theme-latte .token.punctuation { color: #6c6f85; }
+  .theme-latte .token.number { color: #fe640b; }
+  .theme-latte .token.string { color: #40a02b; }
+  .theme-latte .token.keyword { color: #8839ef; font-weight: 600; }
+  .theme-latte .token.function { color: #1e66f5; }
+  .theme-latte .token.class-name { color: #df8e1d; }
 }

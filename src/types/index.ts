@@ -16,6 +16,7 @@ export interface NoteItem {
   content: string;
   updated_at: number;
   folder: string;
+  folderDepth?: number;
   tags: string[];
   outlinks: string[];
   backlinks: string[];

@@ -19,7 +19,7 @@ import {
 } from '../services/flashcardService';
 import { semanticSearchEngine } from '../services/semanticSearchService';
 
-export type AppTheme = 'catppuccin-mocha' | 'catppuccin-latte' | 'apple-dark' | 'apple-light';
+export type AppTheme = 'catppuccin-mocha' | 'catppuccin-latte';
 export type AutoSyncOption = 'off' | 'on_save' | '5m' | '15m';
 export type FileSortOption = 'name-asc' | 'name-desc' | 'date-newest' | 'date-oldest';
 
@@ -66,6 +66,24 @@ interface VaultState {
   saveTimeoutId: number | null;
   editorWidth: number; // in pixels, or -1 for 100% full width
 
+  // Auto-Save Configuration
+  autoSaveMode: 'manual' | '2s' | 'on_blur';
+  setAutoSaveMode: (mode: 'manual' | '2s' | 'on_blur') => void;
+
+  // Search Limitation (up to 1 folder depth after root)
+  searchLimitDepth1: boolean;
+  setSearchLimitDepth1: (limit: boolean) => void;
+
+  // Custom System Fonts & Typography
+  appFont: string;
+  editorFont: string;
+  fontSize: number;
+  isFontModalOpen: boolean;
+  setAppFont: (font: string) => void;
+  setEditorFont: (font: string) => void;
+  setFontSize: (size: number) => void;
+  toggleFontModal: () => void;
+
   // Flashcards & Spaced Repetition (Anki SM-2)
   isFlashcardModalOpen: boolean;
   flashcardTargetFolder: string | null;
@@ -73,6 +91,12 @@ interface VaultState {
   flashcards: FlashcardItem[];
   dueFlashcardsCount: number;
   flashcardProgressMap: Record<string, FlashcardProgress>;
+  isNewFlashcardModalOpen: boolean;
+  newFlashcardInitialFront: string;
+  newFlashcardInitialBack: string;
+  newFlashcardInitialDeck: string;
+  openNewFlashcardModal: (front?: string, back?: string, deck?: string) => void;
+  closeNewFlashcardModal: () => void;
 
   // History & Undo / Redo
   undoStack: string[];
@@ -93,6 +117,7 @@ interface VaultState {
   createFolder: (folderName: string, parentFolder?: string) => Promise<string | null>;
   deleteNote: (path: string) => Promise<void>;
   deleteFolder: (folderPath: string) => Promise<void>;
+  renameNote: (oldPath: string, newName: string) => Promise<void>;
   navigateToWikiLink: (targetName: string) => Promise<void>;
   runGitSync: (commitMsg?: string) => Promise<void>;
   setSelectedFolder: (folder: string | null) => void;
@@ -152,6 +177,62 @@ const VAULT_PATH_KEY = 'noterip_last_vault_path';
 const THEME_KEY = 'noterip_app_theme';
 const AUTO_SYNC_KEY = 'noterip_auto_sync_interval';
 const EDITOR_WIDTH_KEY = 'noterip_editor_width';
+const AUTOSAVE_MODE_KEY = 'noterip_autosave_mode';
+const SEARCH_DEPTH_KEY = 'noterip_search_limit_depth1';
+const APP_FONT_KEY = 'noterip_app_font';
+const EDITOR_FONT_KEY = 'noterip_editor_font';
+const FONT_SIZE_KEY = 'noterip_editor_font_size';
+
+export function applyFonts(appFont: string, editorFont: string, fontSize?: number) {
+  const root = document.documentElement;
+  if (appFont && appFont.trim()) {
+    root.style.setProperty('--app-font-family', `"${appFont}", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`);
+  } else {
+    root.style.removeProperty('--app-font-family');
+  }
+  if (editorFont && editorFont.trim()) {
+    root.style.setProperty('--editor-font-family', `"${editorFont}", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`);
+  } else {
+    root.style.removeProperty('--editor-font-family');
+  }
+  if (fontSize && fontSize >= 11 && fontSize <= 24) {
+    root.style.setProperty('--editor-font-size', `${fontSize}px`);
+  }
+}
+
+function getInitialAutoSaveMode(): 'manual' | '2s' | 'on_blur' {
+  const saved = localStorage.getItem(AUTOSAVE_MODE_KEY);
+  if (saved === 'manual' || saved === '2s' || saved === 'on_blur') {
+    return saved;
+  }
+  // Default to manual to prevent persistent background saving and Windows Defender locks
+  return 'manual';
+}
+
+function getInitialSearchDepth(): boolean {
+  const saved = localStorage.getItem(SEARCH_DEPTH_KEY);
+  if (saved !== null) {
+    return saved === 'true';
+  }
+  return true; // Limit search to root and direct child folder by default
+}
+
+function getInitialAppFont(): string {
+  return localStorage.getItem(APP_FONT_KEY) || '';
+}
+
+function getInitialEditorFont(): string {
+  return localStorage.getItem(EDITOR_FONT_KEY) || '';
+}
+
+function getInitialFontSize(): number {
+  const saved = localStorage.getItem(FONT_SIZE_KEY);
+  if (saved) {
+    const parsed = parseInt(saved, 10);
+    if (!isNaN(parsed) && parsed >= 11 && parsed <= 24) return parsed;
+  }
+  return 14;
+}
 
 function getInitialEditorWidth(): number {
   try {
@@ -197,16 +278,12 @@ export function applyAppTheme(theme: AppTheme) {
     root.classList.add('theme-mocha', 'dark');
   } else if (theme === 'catppuccin-latte') {
     root.classList.add('theme-latte');
-  } else if (theme === 'apple-dark') {
-    root.classList.add('theme-dark', 'dark');
-  } else {
-    root.classList.add('theme-light');
   }
 }
 
 function getInitialTheme(): AppTheme {
   const saved = localStorage.getItem(THEME_KEY);
-  if (saved === 'catppuccin-mocha' || saved === 'catppuccin-latte' || saved === 'apple-dark' || saved === 'apple-light') {
+  if (saved === 'catppuccin-mocha' || saved === 'catppuccin-latte') {
     return saved;
   }
   // Default to Catppuccin Mocha for eye comfort as requested
@@ -239,7 +316,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
     isSidebarOpen: true,
     isInspectorOpen: true,
     theme: initialTheme,
-    isDarkMode: initialTheme === 'catppuccin-mocha' || initialTheme === 'apple-dark',
+    isDarkMode: initialTheme === 'catppuccin-mocha',
     autoLinkMentions: true, // Default to true so intelligent connections are active
 
     graphSettings: {
@@ -276,9 +353,25 @@ export const useVaultStore = create<VaultState>((set, get) => {
     isSmartQAModalOpen: false,
     smartQAInitialQuestion: '',
 
+    autoSaveMode: getInitialAutoSaveMode(),
+    searchLimitDepth1: getInitialSearchDepth(),
+    appFont: getInitialAppFont(),
+    editorFont: getInitialEditorFont(),
+    fontSize: getInitialFontSize(),
+    isFontModalOpen: false,
+    isNewFlashcardModalOpen: false,
+    newFlashcardInitialFront: '',
+    newFlashcardInitialBack: '',
+    newFlashcardInitialDeck: '',
+
     initialize: async () => {
       const theme = getInitialTheme();
       applyAppTheme(theme);
+
+      const appFont = getInitialAppFont();
+      const editorFont = getInitialEditorFont();
+      const fontSize = getInitialFontSize();
+      applyFonts(appFont, editorFont, fontSize);
 
       const syncPref = getInitialAutoSync();
       setupPeriodicSync(syncPref, () => {
@@ -313,54 +406,58 @@ export const useVaultStore = create<VaultState>((set, get) => {
     loadVault: async (vaultPath: string) => {
       try {
         const tree = await tauriBridge.scanVault(vaultPath);
-        const rawNotesMap = new Map<string, { path: string; title: string; rel_path: string; content: string; updated_at: number; folder: string }>();
+        const rawNotesMap = new Map<string, { path: string; title: string; rel_path: string; content: string; updated_at: number; folder: string; folderDepth?: number }>();
 
-        async function collectNotes(nodes: FileNode[], currentFolder: string) {
+        const noteFiles: Array<{ node: FileNode; currentPath: string }> = [];
+        function findNoteFiles(nodes: FileNode[], currentPath: string) {
           for (const node of nodes) {
             if (node.is_dir && node.children) {
-              await collectNotes(node.children, node.name);
+              const nextPath = currentPath ? `${currentPath}/${node.name}` : node.name;
+              findNoteFiles(node.children, nextPath);
             } else if (!node.is_dir) {
               const ext = node.extension?.toLowerCase() || '';
               if (ext === 'md' || ext === 'markdown' || ext === 'txt' || node.name.endsWith('.md')) {
-                try {
-                  const content = await tauriBridge.readNote(node.path);
-                  const title = node.name.replace(/\.(md|markdown|txt)$/i, '');
-                  const rel_path = currentFolder ? `${currentFolder}/${node.name}` : node.name;
-                  rawNotesMap.set(node.path, {
-                    path: node.path,
-                    title,
-                    rel_path,
-                    content,
-                    updated_at: node.updated_at || Date.now(),
-                    folder: currentFolder || 'Root',
-                  });
-                } catch (e) {
-                  console.warn(`Could not read note ${node.path}:`, e);
-                }
+                noteFiles.push({ node, currentPath });
               }
             }
           }
         }
+        findNoteFiles(tree, '');
 
-        await collectNotes(tree, '');
+        // Load notes in concurrent batches of 15 to prevent IPC thread locking and memory spikes
+        const BATCH_SIZE = 15;
+        for (let b = 0; b < noteFiles.length; b += BATCH_SIZE) {
+          const slice = noteFiles.slice(b, b + BATCH_SIZE);
+          await Promise.all(
+            slice.map(async ({ node, currentPath }) => {
+              try {
+                const content = await tauriBridge.readNote(node.path);
+                const title = node.name.replace(/\.(md|markdown|txt)$/i, '');
+                const rel_path = currentPath ? `${currentPath}/${node.name}` : node.name;
+                const pathParts = rel_path.split('/');
+                const folder = pathParts.length > 1 ? pathParts[0] : 'Root';
+                const folderDepth = pathParts.length - 1;
+                rawNotesMap.set(node.path, {
+                  path: node.path,
+                  title,
+                  rel_path,
+                  content,
+                  updated_at: node.updated_at || Date.now(),
+                  folder,
+                  folderDepth,
+                });
+              } catch (e) {
+                console.warn(`Could not read note ${node.path}:`, e);
+              }
+            })
+          );
+        }
 
         const indexedNotes = computeBidirectionalLinks(rawNotesMap);
         indexedNotes.sort((a, b) => b.updated_at - a.updated_at);
 
+        // Folders start completely collapsed when opening the application (Item 12)
         const initialExpanded: Record<string, boolean> = { ...get().expandedFolders };
-        if (Object.keys(initialExpanded).length === 0) {
-          function expandDefaults(nodes: FileNode[], depth = 0) {
-            for (const n of nodes) {
-              if (n.is_dir) {
-                initialExpanded[n.path] = true;
-                if (depth < 2 && n.children) {
-                  expandDefaults(n.children, depth + 1);
-                }
-              }
-            }
-          }
-          expandDefaults(tree, 0);
-        }
 
         set({
           vaultPath,
@@ -370,7 +467,14 @@ export const useVaultStore = create<VaultState>((set, get) => {
         });
 
         get().refreshFlashcards();
-        semanticSearchEngine.indexVault(indexedNotes);
+        // Defer semantic indexing to idle callback to keep startup memory low
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(() => {
+            semanticSearchEngine.indexVault(indexedNotes);
+          });
+        } else {
+          setTimeout(() => semanticSearchEngine.indexVault(indexedNotes), 2500);
+        }
 
         const currentActive = get().activeNotePath;
         if (currentActive && rawNotesMap.has(currentActive)) {
@@ -391,12 +495,13 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
       try {
         const content = await tauriBridge.readNote(path);
+        const safeContent = content ?? '';
         lastHistorySnapshotTime = Date.now();
         set({
           activeNotePath: path,
-          activeNoteContent: content,
+          activeNoteContent: safeContent,
           activeView: 'notes',
-          undoStack: [content],
+          undoStack: [safeContent],
           redoStack: [],
           canUndo: false,
           canRedo: false,
@@ -410,7 +515,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
     },
 
     updateActiveContent: (content: string, isAtomic: boolean = false) => {
-      const { activeNotePath, activeNoteContent, undoStack, saveTimeoutId } = get();
+      const { activeNotePath, activeNoteContent, undoStack, saveTimeoutId, autoSaveMode } = get();
       if (!activeNotePath || content === activeNoteContent) return;
 
       const now = Date.now();
@@ -430,9 +535,13 @@ export const useVaultStore = create<VaultState>((set, get) => {
         window.clearTimeout(saveTimeoutId);
       }
 
-      const timeoutId = window.setTimeout(() => {
-        get().saveActiveNote();
-      }, 800);
+      // Auto-save: only set timer if autoSaveMode is '2s'
+      let timeoutId: number | null = null;
+      if (autoSaveMode === '2s') {
+        timeoutId = window.setTimeout(() => {
+          get().saveActiveNote();
+        }, 2000);
+      }
 
       set({
         activeNoteContent: content,
@@ -517,7 +626,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
       try {
         await tauriBridge.writeNote(activeNotePath, activeNoteContent);
 
-        const updatedNotesMap = new Map<string, { path: string; title: string; rel_path: string; content: string; updated_at: number; folder: string }>();
+        const updatedNotesMap = new Map<string, { path: string; title: string; rel_path: string; content: string; updated_at: number; folder: string; folderDepth?: number }>();
 
         notes.forEach((n) => {
           if (n.path === activeNotePath) {
@@ -528,6 +637,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
               content: activeNoteContent,
               updated_at: Date.now(),
               folder: n.folder,
+              folderDepth: n.folderDepth,
             });
           } else {
             updatedNotesMap.set(n.path, {
@@ -537,6 +647,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
               content: n.content,
               updated_at: n.updated_at,
               folder: n.folder,
+              folderDepth: n.folderDepth,
             });
           }
         });
@@ -553,7 +664,14 @@ export const useVaultStore = create<VaultState>((set, get) => {
           saveTimeoutId: null,
         });
 
-        semanticSearchEngine.indexVault(reindexed);
+        // Defer semantic re-indexing on save
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(() => {
+            semanticSearchEngine.indexVault(reindexed);
+          });
+        } else {
+          setTimeout(() => semanticSearchEngine.indexVault(reindexed), 1000);
+        }
 
         // Auto-sync on save if enabled (rate-limited / only if not already syncing)
         if (get().autoSyncInterval === 'on_save' && !get().gitStatus.isSyncing) {
@@ -657,6 +775,34 @@ export const useVaultStore = create<VaultState>((set, get) => {
       }
     },
 
+    renameNote: async (oldPath: string, newName: string) => {
+      const { vaultPath, activeNotePath } = get();
+      if (!vaultPath) return;
+
+      try {
+        // Build new path: same directory, new filename
+        const separator = oldPath.includes('\\') ? '\\' : '/';
+        const parts = oldPath.split(separator);
+        const oldExt = parts[parts.length - 1].match(/\.[^.]+$/)?.[0] || '.md';
+        const cleanName = newName.trim().replace(/\.(md|markdown|txt)$/i, '');
+        if (!cleanName) return;
+        parts[parts.length - 1] = `${cleanName}${oldExt}`;
+        const newPath = parts.join(separator);
+
+        if (newPath === oldPath) return;
+
+        await tauriBridge.renameNote(oldPath, newPath);
+        await get().loadVault(vaultPath);
+
+        // If the renamed note was active, re-select it at its new path
+        if (activeNotePath === oldPath) {
+          await get().selectNote(newPath);
+        }
+      } catch (err) {
+        console.error('Failed to rename note:', err);
+      }
+    },
+
     navigateToWikiLink: async (targetName: string) => {
       const { notes } = get();
       const cleanTarget = normalizeNoteName(targetName).toLowerCase();
@@ -710,22 +856,13 @@ export const useVaultStore = create<VaultState>((set, get) => {
       applyAppTheme(newTheme);
       set({
         theme: newTheme,
-        isDarkMode: newTheme === 'catppuccin-mocha' || newTheme === 'apple-dark',
+        isDarkMode: newTheme === 'catppuccin-mocha',
       });
     },
 
     toggleDarkMode: () => {
       const current = get().theme;
-      let nextTheme: AppTheme;
-      if (current === 'catppuccin-mocha') {
-        nextTheme = 'catppuccin-latte';
-      } else if (current === 'catppuccin-latte') {
-        nextTheme = 'catppuccin-mocha';
-      } else if (current === 'apple-dark') {
-        nextTheme = 'apple-light';
-      } else {
-        nextTheme = 'catppuccin-mocha';
-      }
+      const nextTheme: AppTheme = current === 'catppuccin-mocha' ? 'catppuccin-latte' : 'catppuccin-mocha';
       get().setTheme(nextTheme);
     },
 
@@ -948,5 +1085,59 @@ export const useVaultStore = create<VaultState>((set, get) => {
         isSmartQAModalOpen: !state.isSmartQAModalOpen,
         smartQAInitialQuestion: '',
       })),
+
+    // Auto-Save Mode
+    setAutoSaveMode: (mode) => {
+      localStorage.setItem(AUTOSAVE_MODE_KEY, mode);
+      set({ autoSaveMode: mode });
+    },
+
+    // Search Depth Limit (up to 1 folder depth after root)
+    setSearchLimitDepth1: (limit) => {
+      localStorage.setItem(SEARCH_DEPTH_KEY, limit ? 'true' : 'false');
+      set({ searchLimitDepth1: limit });
+    },
+
+    // Typography & System Fonts
+    setAppFont: (font: string) => {
+      localStorage.setItem(APP_FONT_KEY, font);
+      set({ appFont: font });
+      applyFonts(font, get().editorFont, get().fontSize);
+    },
+
+    setEditorFont: (font: string) => {
+      localStorage.setItem(EDITOR_FONT_KEY, font);
+      set({ editorFont: font });
+      applyFonts(get().appFont, font, get().fontSize);
+    },
+
+    setFontSize: (size: number) => {
+      localStorage.setItem(FONT_SIZE_KEY, size.toString());
+      set({ fontSize: size });
+      applyFonts(get().appFont, get().editorFont, size);
+    },
+
+    toggleFontModal: () => {
+      set((state) => ({ isFontModalOpen: !state.isFontModalOpen }));
+    },
+
+    // Standalone New Flashcard Modal
+    openNewFlashcardModal: (front = '', back = '', deck = '') => {
+      set({
+        isNewFlashcardModalOpen: true,
+        newFlashcardInitialFront: front,
+        newFlashcardInitialBack: back,
+        newFlashcardInitialDeck: deck,
+      });
+    },
+
+    closeNewFlashcardModal: () => {
+      set({
+        isNewFlashcardModalOpen: false,
+        newFlashcardInitialFront: '',
+        newFlashcardInitialBack: '',
+        newFlashcardInitialDeck: '',
+      });
+    },
   };
 });

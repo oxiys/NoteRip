@@ -360,7 +360,7 @@ export const GraphView: React.FC = () => {
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.k, transform.k);
 
-      const isMocha = theme === 'catppuccin-mocha' || (isDarkMode && theme !== 'apple-dark');
+      const isMocha = theme === 'catppuccin-mocha' || isDarkMode;
       const isLatte = theme === 'catppuccin-latte';
       const isDark = isDarkMode;
 

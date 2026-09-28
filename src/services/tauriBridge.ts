@@ -86,9 +86,17 @@ Vedi anche [[01 - Corsi/Architettura degli Elaboratori/Sistema binario e operazi
 
 Aritmetica binaria, complemento a due e gestione dell'overflow nella ALU.
 
+### Aritmetica e Addizione Binaria:
+L'addizione in binario si esegue colonna per colonna da destra a sinistra (LSB verso MSB) sommando le cifre binarie secondo le regole elementari:
+- $0 + 0 = 0$
+- $0 + 1 = 1$
+- $1 + 0 = 1$
+- $1 + 1 = 0$ con riporto di $1$ (in quanto $1+1 = 2_{10} = 10_2$)
+- $1 + 1 + 1 = 1$ con riporto di $1$ ($3_{10} = 11_2$)
+
 ### Rappresentazione in Complemento a 2:
 Dato un numero a $n$ bit:
-$$N = -b_{n-1} 2^{n-1} + \\sum_{i=0}^{n-2} b_i 2^i$$
+$$N = -b_{n-1} 2^{n-1} + \sum_{i=0}^{n-2} b_i 2^i$$
 
 ### 🧠 Flashcards per Ripasso (SM-2):
 Come si calcola il complemento a due di un numero binario?::Invertendo tutti i bit (complemento a 1) e sommando 1 al bit meno significativo (LSB).

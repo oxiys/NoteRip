@@ -12,7 +12,6 @@ import {
   PanelLeft,
   PanelRight,
   Palette,
-  Sparkles,
   MoveHorizontal,
   Table,
   Sigma,
@@ -24,6 +23,9 @@ import {
   CornerDownLeft,
   X,
   Bot,
+  Type,
+  Filter,
+  Check,
 } from 'lucide-react';
 
 interface PaletteItem {
@@ -31,10 +33,33 @@ interface PaletteItem {
   category: 'Note' | 'Comandi' | 'Tag' | 'Cartelle';
   title: string;
   subtitle?: string;
+  excerpt?: string;
   badge?: string;
   icon: React.ReactNode;
   action: () => void;
   keywords?: string[];
+}
+
+type TabCategory = 'all' | 'Note' | 'Comandi' | 'Cartelle' | 'Tag';
+
+function highlightMatch(text: string, q: string): React.ReactNode {
+  if (!q.trim() || !text) return text;
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escaped})`, 'gi');
+  const parts = text.split(regex);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    regex.test(part) ? (
+      <mark
+        key={i}
+        className="bg-amber-400/35 text-amber-950 dark:text-amber-200 font-semibold px-0.5 rounded"
+      >
+        {part}
+      </mark>
+    ) : (
+      part
+    )
+  );
 }
 
 export const CommandPalette: React.FC = () => {
@@ -61,9 +86,16 @@ export const CommandPalette: React.FC = () => {
     activeNoteContent,
     dueFlashcardsCount,
     openSmartQAModal,
+    searchLimitDepth1,
+    setSearchLimitDepth1,
+    toggleFontModal,
+    autoSaveMode,
+    setAutoSaveMode,
+    openNewFlashcardModal,
   } = useVaultStore();
 
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<TabCategory>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -72,6 +104,7 @@ export const CommandPalette: React.FC = () => {
   useEffect(() => {
     if (isCommandPaletteOpen) {
       setQuery(commandPaletteInitialQuery || '');
+      setActiveTab('all');
       setSelectedIndex(0);
       setTimeout(() => {
         inputRef.current?.focus();
@@ -115,6 +148,54 @@ export const CommandPalette: React.FC = () => {
   // Build static commands list
   const commandsList = useMemo<PaletteItem[]>(() => {
     const items: PaletteItem[] = [
+      // Tipografia & Font di Sistema
+      {
+        id: 'cmd-font-modal',
+        category: 'Comandi',
+        title: 'Personalizza Font di Sistema & Tipografia',
+        subtitle: 'Scegli font interfaccia ed editor tra i font installati su Windows',
+        badge: 'Tipografia',
+        icon: <Type size={16} className="text-amber-500" />,
+        action: () => toggleFontModal(),
+        keywords: ['font', 'tipografia', 'dimensione', 'carattere', 'testo', 'monospace', 'sistema'],
+      },
+
+      // Modalità Salvataggio
+      {
+        id: 'cmd-toggle-autosave',
+        category: 'Comandi',
+        title: `Modalità Salvataggio: Attualmente ${autoSaveMode === 'manual' ? 'MANUALE (Ctrl+S)' : 'AUTOMATICO (2s)'}`,
+        subtitle: 'Passa tra salvataggio manuale controllato e autosave a intervallo',
+        badge: 'Salvataggio',
+        icon: <Check size={16} className="text-emerald-500" />,
+        action: () => setAutoSaveMode(autoSaveMode === 'manual' ? '2s' : 'manual'),
+        keywords: ['salvataggio', 'save', 'autosave', 'manuale', 'automatico', 'ctrl+s'],
+      },
+
+      // Filtro Profondità Ricerca
+      {
+        id: 'cmd-toggle-search-depth',
+        category: 'Comandi',
+        title: `Filtro Profondità Ricerca: ${searchLimitDepth1 ? 'Solo Cartelle Dirette (Depth <= 1)' : 'Tutto il Vault (Completo)'}`,
+        subtitle: 'Limita la ricerca alla root e alle cartelle dirette di primo livello',
+        badge: 'Ricerca',
+        icon: <Filter size={16} className="text-blue-500" />,
+        action: () => setSearchLimitDepth1(!searchLimitDepth1),
+        keywords: ['profondita', 'ricerca', 'cartelle dirette', 'depth', 'filtro', 'root'],
+      },
+
+      // Nuova Flashcard Standalone
+      {
+        id: 'cmd-new-flashcard-standalone',
+        category: 'Comandi',
+        title: 'Crea Nuova Flashcard Standalone',
+        subtitle: 'Aggiunge una flashcard al mazzo senza modificare il testo della nota',
+        badge: 'Studio',
+        icon: <Brain size={16} className="text-amber-500" />,
+        action: () => openNewFlashcardModal(activeNotePath || undefined),
+        keywords: ['nuova flashcard', 'crea flashcard', 'anki', 'carta', 'domanda'],
+      },
+
       // Ricerca Semantica & Smart Q&A
       {
         id: 'cmd-smart-qa',
@@ -147,6 +228,16 @@ export const CommandPalette: React.FC = () => {
         icon: <Brain size={16} className="text-amber-500" />,
         action: () => openFlashcardSession(null, activeNotePath),
         keywords: ['anki', 'ripasso', 'flashcard', 'questa nota'],
+      },
+      {
+        id: 'cmd-flashcards-view',
+        category: 'Comandi',
+        title: 'Apri Sezione Flashcards & Mazzi',
+        subtitle: 'Visualizza e gestisci tutte le flashcards create nel Vault',
+        badge: 'Studio',
+        icon: <Brain size={16} className="text-amber-500" />,
+        action: () => setActiveView('flashcards'),
+        keywords: ['flashcard', 'mazzi', 'deck', 'sezione', 'gestione'],
       },
 
       // Viste e Navigazione
@@ -254,26 +345,7 @@ export const CommandPalette: React.FC = () => {
         action: () => setTheme('catppuccin-latte' as AppTheme),
         keywords: ['tema', 'theme', 'light', 'chiaro', 'catppuccin', 'latte'],
       },
-      {
-        id: 'cmd-theme-apple-dark',
-        category: 'Comandi',
-        title: 'Tema: Apple Dark (Nero Assoluto Minimal)',
-        subtitle: 'Stile scuro macOS moderno con accento ambra',
-        badge: 'Tema',
-        icon: <Palette size={16} className="text-neutral-400" />,
-        action: () => setTheme('apple-dark' as AppTheme),
-        keywords: ['tema', 'theme', 'apple', 'dark', 'nero'],
-      },
-      {
-        id: 'cmd-theme-apple-light',
-        category: 'Comandi',
-        title: 'Tema: Apple Light (Bianco Elegante)',
-        subtitle: 'Stile chiaro nativo Apple con tipografia pulita',
-        badge: 'Tema',
-        icon: <Palette size={16} className="text-amber-500" />,
-        action: () => setTheme('apple-light' as AppTheme),
-        keywords: ['tema', 'theme', 'apple', 'light', 'bianco'],
-      },
+
 
       // Larghezza Editor
       {
@@ -318,26 +390,6 @@ export const CommandPalette: React.FC = () => {
       },
 
       // Inserimenti Rapidi
-      {
-        id: 'cmd-insert-flashcard-qa',
-        category: 'Comandi',
-        title: 'Inserisci Flashcard: Domanda / Risposta',
-        subtitle: 'Sintassi istantanea: Domanda?::Risposta corretta',
-        badge: 'Flashcard',
-        icon: <Brain size={16} className="text-amber-500" />,
-        action: () => insertIntoCurrentNote('\nDomanda qui?::Risposta corretta qui.\n'),
-        keywords: ['flashcard', 'domanda', 'risposta', 'anki', 'inserisci'],
-      },
-      {
-        id: 'cmd-insert-cloze',
-        category: 'Comandi',
-        title: 'Inserisci Cloze Deletion (Testo Nascosto)',
-        subtitle: 'Sintassi con cloze: {c1::testo da ricordare}',
-        badge: 'Flashcard',
-        icon: <Sparkles size={16} className="text-amber-500" />,
-        action: () => insertIntoCurrentNote('{c1::testo da ricordare}'),
-        keywords: ['cloze', 'deletion', 'testo nascosto', 'flashcard', 'anki'],
-      },
       {
         id: 'cmd-insert-latex-inline',
         category: 'Comandi',
@@ -390,28 +442,6 @@ graph TD
     Result --> End([Fine])
 \`\`\``),
         keywords: ['mermaid', 'grafico', 'flowchart', 'flusso', 'algoritmo', 'diagramma'],
-      },
-      {
-        id: 'cmd-insert-mermaid-mindmap',
-        category: 'Comandi',
-        title: 'Inserisci Mappa Mentale Mermaid (Mindmap)',
-        subtitle: 'Albero concettuale per ripasso e schemi esame',
-        badge: 'Mermaid',
-        icon: <Workflow size={16} className="text-purple-500" />,
-        action: () =>
-          insertIntoCurrentNote(`\`\`\`mermaid
-mindmap
-  root((Argomento Esame))
-    Fondamenti
-      Definizioni
-      Teoremi
-    Applicazioni
-      Algoritmi
-      Casi di Studio
-    Approfondimenti
-      Limiti e Trade-off
-\`\`\``),
-        keywords: ['mindmap', 'mappa', 'mentale', 'albero', 'schema', 'mermaid'],
       },
       {
         id: 'cmd-insert-c-snippet',
@@ -470,6 +500,8 @@ public record Studente(int matricola, String nome, String corso) {
     activeView,
     activeNotePath,
     activeNoteContent,
+    autoSaveMode,
+    searchLimitDepth1,
     openFlashcardSession,
     setActiveView,
     toggleSidebar,
@@ -481,6 +513,11 @@ public record Studente(int matricola, String nome, String corso) {
     setTheme,
     setEditorWidth,
     insertIntoCurrentNote,
+    toggleFontModal,
+    setAutoSaveMode,
+    setSearchLimitDepth1,
+    openNewFlashcardModal,
+    openSmartQAModal,
   ]);
 
   // Extract unique tags and folders from vault notes
@@ -508,14 +545,20 @@ public record Studente(int matricola, String nome, String corso) {
     return Array.from(set);
   }, [notes]);
 
-  // Filter items according to search query
+  // Filter items according to search query, active tab, and depth filter (Item 4 & 11)
   const filteredItems = useMemo<PaletteItem[]>(() => {
     const raw = query.trim();
-    const isCommandMode = raw.startsWith('>');
-    const isTagMode = raw.startsWith('#');
-    const isFolderMode = raw.startsWith('/');
+    const isCommandMode = raw.startsWith('>') || activeTab === 'Comandi';
+    const isTagMode = raw.startsWith('#') || activeTab === 'Tag';
+    const isFolderMode = raw.startsWith('/') || activeTab === 'Cartelle';
+    const isNoteOnlyMode = activeTab === 'Note';
 
     const cleanQuery = raw.replace(/^[>#/]/, '').trim().toLowerCase();
+
+    // Base notes: respect searchLimitDepth1 if active (Item 4)
+    const availableNotes = searchLimitDepth1
+      ? notes.filter((n) => n.folderDepth === undefined || n.folderDepth <= 1)
+      : notes;
 
     // 1. Tag Mode
     if (isTagMode) {
@@ -530,7 +573,6 @@ public record Studente(int matricola, String nome, String corso) {
           icon: <Tag size={15} className="text-amber-500" />,
           action: () => {
             closeCommandPalette();
-            // Filter or search for this tag
             useVaultStore.getState().setSearchQuery(`#${item.tag}`);
           },
         }));
@@ -563,11 +605,49 @@ public record Studente(int matricola, String nome, String corso) {
       });
     }
 
-    // 4. Unified Global Search (Notes first, then Commands, then Tags)
+    // 4. Note Only Mode
+    if (isNoteOnlyMode) {
+      return availableNotes
+        .filter((note) => {
+          if (!cleanQuery) return true;
+          const inTitle = note.title.toLowerCase().includes(cleanQuery);
+          const inFolder = note.folder.toLowerCase().includes(cleanQuery);
+          const inTags = (note.tags || []).some((t) => t.toLowerCase().includes(cleanQuery));
+          const inContent = note.content.toLowerCase().includes(cleanQuery);
+          return inTitle || inFolder || inTags || inContent;
+        })
+        .slice(0, 25)
+        .map((note) => {
+          let excerpt: string | undefined = undefined;
+          if (cleanQuery) {
+            const idx = note.content.toLowerCase().indexOf(cleanQuery);
+            if (idx !== -1) {
+              const start = Math.max(0, idx - 30);
+              const end = Math.min(note.content.length, idx + cleanQuery.length + 45);
+              excerpt = (start > 0 ? '...' : '') + note.content.slice(start, end).replace(/\n+/g, ' ') + (end < note.content.length ? '...' : '');
+            }
+          }
+          return {
+            id: `note-${note.path}`,
+            category: 'Note' as const,
+            title: note.title,
+            subtitle: note.folder ? `${note.folder} / ${note.title}` : note.title,
+            excerpt,
+            badge: note.folder || 'Vault',
+            icon: <FileText size={15} className="text-[var(--accent)]" />,
+            action: () => {
+              selectNote(note.path);
+              closeCommandPalette();
+            },
+          };
+        });
+    }
+
+    // 5. Unified Global Search (Notes first, then Commands, then Tags)
     const result: PaletteItem[] = [];
 
     // Note items
-    const matchedNotes = notes
+    const matchedNotes = availableNotes
       .filter((note) => {
         if (!cleanQuery) return true;
         const inTitle = note.title.toLowerCase().includes(cleanQuery);
@@ -582,11 +662,22 @@ public record Studente(int matricola, String nome, String corso) {
         const tagsStr = (note.tags || []).map((t) => (t.startsWith('#') ? t : `#${t}`)).join(' ');
         if (tagsStr) snippet += ` ${tagsStr}`;
 
+        let excerpt: string | undefined = undefined;
+        if (cleanQuery) {
+          const idx = note.content.toLowerCase().indexOf(cleanQuery);
+          if (idx !== -1) {
+            const start = Math.max(0, idx - 25);
+            const end = Math.min(note.content.length, idx + cleanQuery.length + 40);
+            excerpt = (start > 0 ? '...' : '') + note.content.slice(start, end).replace(/\n+/g, ' ') + (end < note.content.length ? '...' : '');
+          }
+        }
+
         return {
           id: `note-${note.path}`,
           category: 'Note' as const,
           title: note.title,
           subtitle: snippet || 'Nota Markdown',
+          excerpt,
           badge: note.folder || 'Vault',
           icon: <FileText size={15} className="text-[var(--accent)]" />,
           action: () => {
@@ -600,7 +691,7 @@ public record Studente(int matricola, String nome, String corso) {
 
     // Matching Commands
     const matchedCommands = commandsList.filter((cmd) => {
-      if (!cleanQuery) return false; // In empty query, show notes first
+      if (!cleanQuery) return false;
       const text = `${cmd.title} ${cmd.subtitle || ''} ${cmd.keywords?.join(' ') || ''}`.toLowerCase();
       return text.includes(cleanQuery);
     });
@@ -613,12 +704,22 @@ public record Studente(int matricola, String nome, String corso) {
     }
 
     return result;
-  }, [query, commandsList, notes, vaultTags, vaultFolders, selectNote, closeCommandPalette]);
+  }, [
+    query,
+    activeTab,
+    commandsList,
+    notes,
+    searchLimitDepth1,
+    vaultTags,
+    vaultFolders,
+    selectNote,
+    closeCommandPalette,
+  ]);
 
-  // Reset selected index when query changes
+  // Reset selected index when query or tab changes
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, [query, activeTab]);
 
   // Keyboard navigation inside palette
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -653,17 +754,19 @@ public record Studente(int matricola, String nome, String corso) {
 
   if (!isCommandPaletteOpen) return null;
 
+  const cleanQuery = query.replace(/^[>#/]/, '').trim();
+
   return (
     <div
       onClick={closeCommandPalette}
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-150 select-none"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-black/50 backdrop-blur-xl animate-in fade-in duration-150 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-2xl apple-card-item shadow-2xl border border-black/15 dark:border-white/15 overflow-hidden flex flex-col bg-[var(--card-bg)] text-[var(--text-primary)] transition-all animate-in zoom-in-95 duration-150"
+        className="w-full max-w-2xl rounded-2xl apple-card-item shadow-apple-popover border border-[var(--border-subtle)] overflow-hidden flex flex-col bg-[var(--card-bg)] text-[var(--text-primary)] transition-all animate-in zoom-in-95 duration-150"
       >
         {/* Search Bar Input */}
-        <div className="flex items-center px-4 py-3.5 border-b border-black/10 dark:border-white/10 gap-3">
+        <div className="flex items-center px-4 py-3.5 border-b border-[var(--border-subtle)] gap-3">
           <Search size={18} className="text-[var(--text-muted)] shrink-0" />
           <input
             ref={inputRef}
@@ -689,16 +792,93 @@ public record Studente(int matricola, String nome, String corso) {
           )}
         </div>
 
+        {/* Category Tabs & Search Depth Filter Bar (Item 11 & Item 4) */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02] text-xs">
+          <div className="flex items-center space-x-1 overflow-x-auto py-0.5">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === 'all'
+                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+              }`}
+            >
+              Tutti
+            </button>
+            <button
+              onClick={() => setActiveTab('Note')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1 ${
+                activeTab === 'Note'
+                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+              }`}
+            >
+              <span>Note</span>
+              <span className="text-[10px] opacity-75">
+                ({notes.filter((n) => !searchLimitDepth1 || n.folderDepth === undefined || n.folderDepth <= 1).length})
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('Comandi')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === 'Comandi'
+                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+              }`}
+            >
+              Comandi ({commandsList.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('Cartelle')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === 'Cartelle'
+                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+              }`}
+            >
+              Cartelle ({vaultFolders.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('Tag')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === 'Tag'
+                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+              }`}
+            >
+              Tag ({vaultTags.length})
+            </button>
+          </div>
+
+          {/* Search Depth Filter Toggle Button (Item 4) */}
+          <button
+            onClick={() => setSearchLimitDepth1(!searchLimitDepth1)}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg border text-[11px] transition-colors shrink-0 ${
+              searchLimitDepth1
+                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25 font-semibold'
+                : 'bg-black/5 dark:bg-white/5 text-[var(--text-muted)] border-black/5 dark:border-white/10 hover:text-[var(--text-primary)]'
+            }`}
+            title={
+              searchLimitDepth1
+                ? 'Filtro attivo: ricerca limitata a Root e cartelle dirette di 1° livello. Clicca per cercare in tutto il Vault.'
+                : 'Filtro disattivo: ricerca in tutte le cartelle e sottocartelle. Clicca per limitare alle cartelle dirette.'
+            }
+          >
+            <Filter size={11} />
+            <span>{searchLimitDepth1 ? 'Cartelle Dirette (Prof. 1)' : 'Tutto il Vault'}</span>
+          </button>
+        </div>
+
         {/* Results List */}
         <div
           ref={listRef}
-          className="max-h-[380px] overflow-y-auto p-2 space-y-1 divide-y divide-black/[0.03] dark:divide-white/[0.03]"
+          className="max-h-[400px] overflow-y-auto p-2 space-y-1 divide-y divide-black/[0.03] dark:divide-white/[0.03]"
         >
           {filteredItems.length === 0 ? (
             <div className="py-12 text-center text-[var(--text-muted)] space-y-2">
               <p className="text-xs">Nessun risultato trovato per &quot;{query}&quot;</p>
               <p className="text-[11px] opacity-75">
-                Premi <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10">&gt;</kbd> per visualizzare tutti i comandi dell&apos;app
+                Premi <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10">&gt;</kbd> per i comandi o cambia filtro sopra
               </p>
             </div>
           ) : (
@@ -713,13 +893,13 @@ public record Studente(int matricola, String nome, String corso) {
                     closeCommandPalette();
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-all ${
+                  className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-all ${
                     isSelected
                       ? 'bg-[var(--accent)] text-white shadow-xs'
                       : 'hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-primary)]'
                   }`}
                 >
-                  <div className="flex items-center space-x-3 min-w-0">
+                  <div className="flex items-center space-x-3 min-w-0 flex-1">
                     <div
                       className={`p-1.5 rounded-lg shrink-0 ${
                         isSelected
@@ -730,12 +910,12 @@ public record Studente(int matricola, String nome, String corso) {
                       {item.icon}
                     </div>
 
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="text-xs font-semibold truncate leading-tight flex items-center gap-1.5">
-                        <span>{item.title}</span>
+                        <span className="truncate">{highlightMatch(item.title, cleanQuery)}</span>
                         {item.badge && (
                           <span
-                            className={`text-[9px] px-1.5 py-0.2 rounded-full font-medium ${
+                            className={`text-[9px] px-1.5 py-0.2 rounded-full font-medium shrink-0 ${
                               isSelected
                                 ? 'bg-white/20 text-white'
                                 : 'bg-black/5 dark:bg-white/10 text-[var(--text-muted)]'
@@ -751,7 +931,18 @@ public record Studente(int matricola, String nome, String corso) {
                             isSelected ? 'text-white/80' : 'text-[var(--text-muted)]'
                           }`}
                         >
-                          {item.subtitle}
+                          {highlightMatch(item.subtitle, cleanQuery)}
+                        </div>
+                      )}
+                      {item.excerpt && (
+                        <div
+                          className={`text-[10px] font-mono truncate mt-0.5 px-1.5 py-0.5 rounded ${
+                            isSelected
+                              ? 'bg-white/15 text-white/90'
+                              : 'bg-black/5 dark:bg-white/5 text-neutral-600 dark:text-neutral-400'
+                          }`}
+                        >
+                          {highlightMatch(item.excerpt, cleanQuery)}
                         </div>
                       )}
                     </div>
@@ -773,7 +964,7 @@ public record Studente(int matricola, String nome, String corso) {
           )}
         </div>
 
-        {/* Footer Shortcut Hints (Raycast style) */}
+        {/* Footer Shortcut Hints (Raycast / Spotlight style) */}
         <div className="px-4 py-2 border-t border-black/5 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] flex items-center justify-between text-[10px] text-[var(--text-muted)]">
           <div className="flex items-center space-x-3">
             <span className="flex items-center space-x-1">
@@ -796,21 +987,30 @@ public record Studente(int matricola, String nome, String corso) {
             </span>
           </div>
 
-          <div className="hidden sm:flex items-center space-x-2">
+          <div className="hidden sm:flex items-center space-x-2 font-mono text-[10px]">
             <button
-              onClick={() => setQuery('>')}
+              onClick={() => {
+                setQuery('>');
+                setActiveTab('Comandi');
+              }}
               className="hover:text-[var(--text-primary)] transition-colors"
             >
               <kbd className="px-1 py-0.2 rounded bg-black/5 dark:bg-white/10">&gt;</kbd> Comandi
             </button>
             <button
-              onClick={() => setQuery('#')}
+              onClick={() => {
+                setQuery('#');
+                setActiveTab('Tag');
+              }}
               className="hover:text-[var(--text-primary)] transition-colors"
             >
               <kbd className="px-1 py-0.2 rounded bg-black/5 dark:bg-white/10">#</kbd> Tag
             </button>
             <button
-              onClick={() => setQuery('/')}
+              onClick={() => {
+                setQuery('/');
+                setActiveTab('Cartelle');
+              }}
               className="hover:text-[var(--text-primary)] transition-colors"
             >
               <kbd className="px-1 py-0.2 rounded bg-black/5 dark:bg-white/10">/</kbd> Cartelle
@@ -821,3 +1021,5 @@ public record Studente(int matricola, String nome, String corso) {
     </div>
   );
 };
+
+export default CommandPalette;

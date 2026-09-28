@@ -24,12 +24,28 @@ export const CodeBlockView: React.FC<CodeBlockViewProps> = ({ lang, code, onEdit
   const [showOutput, setShowOutput] = useState(false);
 
   const cleanLang = (lang || 'code').trim().toLowerCase();
+  const safeCode = code || '';
+
+  // Syntax highlight with Prism (declared unconditionally before any return per React Rules of Hooks)
+  const highlightedCode = React.useMemo(() => {
+    if (cleanLang === 'mermaid') return '';
+    const grammarLang = cleanLang === 'c' ? 'c' : cleanLang === 'java' ? 'java' : cleanLang === 'cpp' ? 'cpp' : cleanLang;
+    const grammar = Prism.languages[grammarLang];
+    if (grammar) {
+      try {
+        return Prism.highlight(safeCode, grammar, grammarLang);
+      } catch {
+        return escapeHtml(safeCode);
+      }
+    }
+    return escapeHtml(safeCode);
+  }, [safeCode, cleanLang]);
 
   // If Mermaid diagram block, delegate to MermaidRenderer
   if (cleanLang === 'mermaid') {
     return (
       <div className="relative group my-3">
-        <MermaidRenderer code={code} />
+        <MermaidRenderer code={safeCode} />
         {onEdit && (
           <button
             onClick={onEdit}
@@ -47,7 +63,7 @@ export const CodeBlockView: React.FC<CodeBlockViewProps> = ({ lang, code, onEdit
   const isExecutable = cleanLang === 'c' || cleanLang === 'cpp' || cleanLang === 'java';
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(safeCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
@@ -57,7 +73,7 @@ export const CodeBlockView: React.FC<CodeBlockViewProps> = ({ lang, code, onEdit
     setIsRunning(true);
     setShowOutput(true);
     try {
-      const res = await tauriBridge.runCode(cleanLang, code);
+      const res = await tauriBridge.runCode(cleanLang, safeCode);
       setRunResult(res);
     } catch (err: unknown) {
       setRunResult({
@@ -71,20 +87,6 @@ export const CodeBlockView: React.FC<CodeBlockViewProps> = ({ lang, code, onEdit
       setIsRunning(false);
     }
   };
-
-  // Syntax highlight with Prism
-  const highlightedCode = React.useMemo(() => {
-    const grammarLang = cleanLang === 'c' ? 'c' : cleanLang === 'java' ? 'java' : cleanLang === 'cpp' ? 'cpp' : cleanLang;
-    const grammar = Prism.languages[grammarLang];
-    if (grammar) {
-      try {
-        return Prism.highlight(code, grammar, grammarLang);
-      } catch {
-        return escapeHtml(code);
-      }
-    }
-    return escapeHtml(code);
-  }, [code, cleanLang]);
 
   const lines = code.split('\n');
 

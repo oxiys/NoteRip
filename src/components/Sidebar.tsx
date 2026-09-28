@@ -16,8 +16,6 @@ import {
   X,
   Palette,
   Coffee,
-  Moon,
-  Sun,
   Cloud,
   RefreshCw,
   ChevronsUpDown,
@@ -26,6 +24,7 @@ import {
   Brain,
   Sparkles,
   Bot,
+  Pencil,
 } from 'lucide-react';
 
 interface ThemeOption {
@@ -57,24 +56,7 @@ const THEME_OPTIONS: ThemeOption[] = [
     accentPreview: '#8839ef',
     isDark: false,
   },
-  {
-    id: 'apple-dark',
-    name: 'Apple Dark',
-    category: 'Classic',
-    icon: <Moon size={14} className="text-amber-400" />,
-    bgPreview: '#121214',
-    accentPreview: '#f59e0b',
-    isDark: true,
-  },
-  {
-    id: 'apple-light',
-    name: 'Apple Light',
-    category: 'Classic',
-    icon: <Sun size={14} className="text-amber-500" />,
-    bgPreview: '#f5f5f7',
-    accentPreview: '#eaa824',
-    isDark: false,
-  },
+
 ];
 
 const SORT_OPTIONS: { id: FileSortOption; label: string; desc: string }[] = [
@@ -114,6 +96,7 @@ export const Sidebar: React.FC = () => {
     flashcards,
     openCommandPalette,
     openSmartQAModal,
+    renameNote,
   } = useVaultStore();
 
   const [searchTreeQuery, setSearchTreeQuery] = useState('');
@@ -131,6 +114,10 @@ export const Sidebar: React.FC = () => {
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const themeMenuRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
+
+  // Inline rename state
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingName, setRenamingName] = useState('');
 
   // Close menus on outside click
   useEffect(() => {
@@ -260,18 +247,19 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside
-      className={`h-full flex flex-col apple-sidebar-panel apple-vibrant select-none transition-all duration-300 ease-in-out shrink-0 overflow-hidden relative border-r border-black/10 dark:border-white/10 ${
+      className={`h-full flex flex-col apple-sidebar-panel apple-vibrant select-none transition-all duration-300 ease-in-out shrink-0 overflow-hidden relative border-r border-[var(--border-subtle)] ${
         isSidebarOpen ? 'w-72' : 'w-0 border-r-0 opacity-0 pointer-events-none'
       }`}
     >
+
       {/* 1. Header Toolbar (Vault Name & Obsidian Action Buttons) */}
-      <div className="p-2.5 border-b border-black/5 dark:border-white/10 space-y-2 bg-black/[0.01] dark:bg-white/[0.01]">
+      <div className="p-2.5 border-b border-[var(--border-subtle)] space-y-2 bg-black/[0.01] dark:bg-white/[0.01]">
         {/* Row 1: Title & Main Window Actions */}
         <div className="flex items-center justify-between">
           <div
             onClick={openVaultDialog}
             title={`Cartella Vault: ${vaultPath || 'Nessuna'}\nClicca per cambiare`}
-            className="flex items-center space-x-2 min-w-0 cursor-pointer p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+            className="flex items-center space-x-2 min-w-0 cursor-pointer p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors macos-clickable"
           >
             <div className="w-5 h-5 rounded-md bg-[var(--accent-subtle)] flex items-center justify-center text-[var(--accent)] shrink-0 shadow-xs">
               <FolderOpen size={12} />
@@ -538,14 +526,33 @@ export const Sidebar: React.FC = () => {
               creatingItem={creatingItem}
               createInputName={createInputName}
               createInputRef={createInputRef}
+              renamingPath={renamingPath}
+              renamingName={renamingName}
               toggleFolder={toggleFolder}
               selectNote={selectNote}
               deleteNote={deleteNote}
               deleteFolder={deleteFolder}
+              renameNote={renameNote}
               onStartCreate={handleStartCreate}
               setCreateInputName={setCreateInputName}
               onSubmitCreate={handleSubmitCreate}
               onCancelCreate={handleCancelCreate}
+              onStartRename={(path, currentName) => {
+                setRenamingPath(path);
+                setRenamingName(currentName);
+              }}
+              setRenamingName={setRenamingName}
+              onSubmitRename={async () => {
+                if (renamingPath && renamingName.trim()) {
+                  await renameNote(renamingPath, renamingName);
+                }
+                setRenamingPath(null);
+                setRenamingName('');
+              }}
+              onCancelRename={() => {
+                setRenamingPath(null);
+                setRenamingName('');
+              }}
             />
           ))
         )}
@@ -648,14 +655,21 @@ interface TreeNodeProps {
   creatingItem: { type: 'file' | 'folder'; parentFolderRel?: string } | null;
   createInputName: string;
   createInputRef: React.RefObject<HTMLInputElement | null>;
+  renamingPath: string | null;
+  renamingName: string;
   toggleFolder: (path: string) => void;
   selectNote: (path: string) => void;
   deleteNote: (path: string) => void;
   deleteFolder: (path: string) => void;
+  renameNote: (oldPath: string, newName: string) => Promise<void>;
   onStartCreate: (type: 'file' | 'folder', parentFolderRel?: string) => void;
   setCreateInputName: (val: string) => void;
   onSubmitCreate: () => void;
   onCancelCreate: () => void;
+  onStartRename: (path: string, currentName: string) => void;
+  setRenamingName: (val: string) => void;
+  onSubmitRename: () => void;
+  onCancelRename: () => void;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -668,18 +682,49 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   creatingItem,
   createInputName,
   createInputRef,
+  renamingPath,
+  renamingName,
   toggleFolder,
   selectNote,
   deleteNote,
   deleteFolder,
+  renameNote,
   onStartCreate,
   setCreateInputName,
   onSubmitCreate,
   onCancelCreate,
+  onStartRename,
+  setRenamingName,
+  onSubmitRename,
+  onCancelRename,
 }) => {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const isExpanded = expandedFolders[node.path] ?? false;
   const currentRel = parentRel ? `${parentRel}/${node.name}` : node.name;
   const isCreatingInside = creatingItem && creatingItem.parentFolderRel === currentRel;
+  const isRenaming = renamingPath === node.path;
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [contextMenu]);
+
+  // Autofocus rename input
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [isRenaming]);
 
   if (node.is_dir) {
     return (
@@ -689,7 +734,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           onClick={() => toggleFolder(node.path)}
           className={`group flex items-center justify-between ${
             depth === 0 ? 'px-2' : 'px-1.5'
-          } py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5`}
+          } py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors duration-150 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5 macos-clickable`}
         >
           <div className="flex items-center space-x-1.5 min-w-0">
             {/* Animated Rotating Chevron */}
@@ -701,7 +746,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 }`}
               />
             </span>
-            <Folder size={13} className="text-amber-500/80 dark:text-amber-400/80 shrink-0" />
+            <Folder size={13} className="text-[#0A84FF] shrink-0" />
             <span className="truncate text-xs font-medium tracking-tight">{node.name}</span>
           </div>
 
@@ -805,14 +850,21 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   creatingItem={creatingItem}
                   createInputName={createInputName}
                   createInputRef={createInputRef}
+                  renamingPath={renamingPath}
+                  renamingName={renamingName}
                   toggleFolder={toggleFolder}
                   selectNote={selectNote}
                   deleteNote={deleteNote}
                   deleteFolder={deleteFolder}
+                  renameNote={renameNote}
                   onStartCreate={onStartCreate}
                   setCreateInputName={setCreateInputName}
                   onSubmitCreate={onSubmitCreate}
                   onCancelCreate={onCancelCreate}
+                  onStartRename={onStartRename}
+                  setRenamingName={setRenamingName}
+                  onSubmitRename={onSubmitRename}
+                  onCancelRename={onCancelRename}
                 />
               ))
             ) : (
@@ -833,48 +885,134 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   const cleanTitle = node.name.replace(/\.(md|markdown|txt)$/i, '');
 
   return (
-    <div
-      onClick={() => selectNote(node.path)}
-      className={`group flex items-center justify-between ${
-        depth === 0 ? 'px-2' : 'px-1.5'
-      } py-1 rounded-lg text-xs cursor-pointer transition-all duration-150 ${
-        isActive
-          ? 'bg-[var(--accent-subtle)] text-[var(--accent)] font-semibold shadow-xs'
-          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
-      }`}
-    >
-      <div className="flex items-center space-x-1.5 min-w-0">
-        <FileText
-          size={13}
-          className={`shrink-0 ${isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}
-        />
-        <span className="truncate text-xs tracking-tight">{cleanTitle}</span>
+    <div className="relative">
+      <div
+        onClick={() => !isRenaming && selectNote(node.path)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setContextMenu({ x: e.clientX, y: e.clientY });
+        }}
+        className={`group flex items-center justify-between ${
+          depth === 0 ? 'px-2.5' : 'px-2'
+        } py-1.5 rounded-lg text-xs cursor-pointer macos-clickable transition-all duration-150 ${
+          isActive
+            ? 'tree-item-active font-medium shadow-xs'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+        }`}
+      >
+        <div className="flex items-center space-x-2 min-w-0">
+          <FileText
+            size={13}
+            className={`shrink-0 ${isActive ? 'text-white' : 'text-[var(--text-muted)]'}`}
+          />
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renamingName}
+              onChange={(e) => setRenamingName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSubmitRename();
+                if (e.key === 'Escape') onCancelRename();
+              }}
+              onBlur={onSubmitRename}
+              onClick={(e) => e.stopPropagation()}
+              className={`flex-1 bg-transparent text-xs font-medium focus:outline-none border-b ${
+                isActive
+                  ? 'text-white border-white/50 placeholder:text-white/50'
+                  : 'text-[var(--text-primary)] border-[var(--accent)]/50 placeholder:text-[var(--text-muted)]'
+              }`}
+              placeholder="Nuovo nome..."
+            />
+          ) : (
+            <span className={`truncate text-xs tracking-tight ${isActive ? 'text-white' : ''}`}>
+              {cleanTitle}
+            </span>
+          )}
+        </div>
+
+        {!isRenaming && (
+          <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                useVaultStore.getState().openFlashcardSession(null, node.path);
+              }}
+              className={`p-1 rounded transition-colors ${
+                isActive
+                  ? 'text-white/80 hover:text-white hover:bg-white/20'
+                  : 'hover:bg-amber-500/15 hover:text-amber-500 text-[var(--text-muted)]'
+              }`}
+              title={`Ripassa Flashcards di "${cleanTitle}"`}
+            >
+              <Brain size={12} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onStartRename(node.path, cleanTitle);
+              }}
+              className={`p-1 rounded transition-colors ${
+                isActive
+                  ? 'text-white/80 hover:text-white hover:bg-white/20'
+                  : 'hover:bg-blue-500/15 hover:text-blue-500 text-[var(--text-muted)]'
+              }`}
+              title="Rinomina nota"
+            >
+              <Pencil size={12} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Eliminare la nota "${cleanTitle}"?`)) {
+                  deleteNote(node.path);
+                }
+              }}
+              className={`p-1 rounded transition-colors ${
+                isActive
+                  ? 'text-white/80 hover:text-white hover:bg-white/20'
+                  : 'hover:bg-rose-500/20 hover:text-rose-500 text-[var(--text-muted)]'
+              }`}
+              title="Elimina nota"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            useVaultStore.getState().openFlashcardSession(null, node.path);
-          }}
-          className="p-1 hover:bg-amber-500/15 hover:text-amber-500 rounded text-[var(--text-muted)] transition-colors"
-          title={`Ripassa Flashcards di "${cleanTitle}"`}
+      {/* Right-click Context Menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-[999] min-w-[160px] rounded-xl shadow-apple-popover border border-black/10 dark:border-white/15 p-1 text-xs apple-card-item"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
         >
-          <Brain size={12} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (confirm(`Eliminare la nota "${cleanTitle}"?`)) {
-              deleteNote(node.path);
-            }
-          }}
-          className="p-1 hover:bg-rose-500/20 hover:text-rose-500 rounded text-[var(--text-muted)] transition-colors"
-          title="Elimina nota"
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
+          <button
+            onClick={() => {
+              setContextMenu(null);
+              onStartRename(node.path, cleanTitle);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[var(--text-primary)] hover:bg-[var(--accent-subtle)] hover:text-[var(--accent)] transition-colors"
+          >
+            <Pencil size={13} />
+            <span>Rinomina</span>
+          </button>
+          <button
+            onClick={() => {
+              setContextMenu(null);
+              if (confirm(`Eliminare la nota "${cleanTitle}"?`)) {
+                deleteNote(node.path);
+              }
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-rose-500 hover:bg-rose-500/10 transition-colors"
+          >
+            <Trash2 size={13} />
+            <span>Elimina</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
