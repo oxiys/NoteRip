@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useVaultStore } from '../store/useVaultStore';
-import type { AppTheme, FileSortOption } from '../store/useVaultStore';
+import type { FileSortOption } from '../store/useVaultStore';
 import type { FileNode } from '../types';
 import {
-  FolderOpen,
   FilePlus,
   FolderPlus,
   ArrowUpDown,
@@ -14,55 +13,21 @@ import {
   Trash2,
   Check,
   X,
-  Palette,
-  Coffee,
   Cloud,
   RefreshCw,
-  ChevronsUpDown,
   FileText,
   Folder,
   Brain,
-  Sparkles,
-  Bot,
   Pencil,
+  Hash,
+  Sparkles,
+  BookOpen,
 } from 'lucide-react';
-
-interface ThemeOption {
-  id: AppTheme;
-  name: string;
-  category: 'Eye Comfort' | 'Classic';
-  icon: React.ReactNode;
-  bgPreview: string;
-  accentPreview: string;
-  isDark: boolean;
-}
-
-const THEME_OPTIONS: ThemeOption[] = [
-  {
-    id: 'catppuccin-mocha',
-    name: 'Catppuccin Mocha',
-    category: 'Eye Comfort',
-    icon: <Coffee size={14} className="text-purple-400" />,
-    bgPreview: '#1e1e2e',
-    accentPreview: '#cba6f7',
-    isDark: true,
-  },
-  {
-    id: 'catppuccin-latte',
-    name: 'Catppuccin Latte',
-    category: 'Eye Comfort',
-    icon: <Coffee size={14} className="text-amber-600" />,
-    bgPreview: '#eff1f5',
-    accentPreview: '#8839ef',
-    isDark: false,
-  },
-
-];
 
 const SORT_OPTIONS: { id: FileSortOption; label: string; desc: string }[] = [
   { id: 'name-asc', label: 'Nome (A - Z)', desc: 'Ordine alfabetico naturale' },
   { id: 'name-desc', label: 'Nome (Z - A)', desc: 'Ordine alfabetico inverso' },
-  { id: 'date-newest', label: 'Modifica recente', desc: 'Note modificate di recente prima' },
+  { id: 'date-newest', label: 'Modifica recente', desc: 'Note modificate di recente' },
   { id: 'date-oldest', label: 'Meno recenti', desc: 'Note create per prime' },
 ];
 
@@ -70,8 +35,8 @@ export const Sidebar: React.FC = () => {
   const {
     vaultPath,
     fileTree,
+    notes,
     activeNotePath,
-    theme,
     gitStatus,
     autoSyncInterval,
     sortOption,
@@ -89,20 +54,19 @@ export const Sidebar: React.FC = () => {
     toggleFolder,
     expandAllFolders,
     collapseAllFolders,
-    setTheme,
     toggleSyncModal,
     setActiveView,
     dueFlashcardsCount,
     flashcards,
-    openCommandPalette,
     openSmartQAModal,
     renameNote,
+    selectedTag,
+    setSelectedTag,
   } = useVaultStore();
 
   const [searchTreeQuery, setSearchTreeQuery] = useState('');
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const [showThemeMenu, setShowThemeMenu] = useState(false);
 
   // In-line creation state
   const [creatingItem, setCreatingItem] = useState<{
@@ -112,7 +76,6 @@ export const Sidebar: React.FC = () => {
   const [createInputName, setCreateInputName] = useState('');
 
   const sortMenuRef = useRef<HTMLDivElement>(null);
-  const themeMenuRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
 
   // Inline rename state
@@ -124,9 +87,6 @@ export const Sidebar: React.FC = () => {
     function handleClickOutside(e: MouseEvent) {
       if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
         setShowSortMenu(false);
-      }
-      if (themeMenuRef.current && !themeMenuRef.current.contains(e.target as Node)) {
-        setShowThemeMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -147,14 +107,27 @@ export const Sidebar: React.FC = () => {
     return parts[parts.length - 1] || 'Vault';
   }, [vaultPath]);
 
-  const currentThemeObj = THEME_OPTIONS.find((t) => t.id === theme) || THEME_OPTIONS[0];
+  // Aggregate all tags across all notes with counts
+  const allTagsWithCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const n of notes) {
+      if (n.tags && Array.isArray(n.tags)) {
+        for (const t of n.tags) {
+          map.set(t, (map.get(t) || 0) + 1);
+        }
+      }
+    }
+    return Array.from(map.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  }, [notes]);
 
   // Sort and filter tree nodes
   const processedTree = useMemo(() => {
     function sortNodes(nodes: FileNode[]): FileNode[] {
       const copy = [...nodes];
       copy.sort((a, b) => {
-        // Folders always first (Obsidian standard)
+        // Folders always first
         if (a.is_dir && !b.is_dir) return -1;
         if (!a.is_dir && b.is_dir) return 1;
 
@@ -184,14 +157,14 @@ export const Sidebar: React.FC = () => {
       });
     }
 
-    function filterNodes(nodes: FileNode[], query: string): FileNode[] {
+    function filterNodes(nodes: FileNode[], query: string, tagFilter: string | null): FileNode[] {
       const q = query.toLowerCase();
       const result: FileNode[] = [];
 
       for (const node of nodes) {
         if (node.is_dir) {
-          const filteredChildren = node.children ? filterNodes(node.children, query) : [];
-          const nameMatches = node.name.toLowerCase().includes(q);
+          const filteredChildren = node.children ? filterNodes(node.children, query, tagFilter) : [];
+          const nameMatches = !tagFilter && node.name.toLowerCase().includes(q);
           if (nameMatches || filteredChildren.length > 0) {
             result.push({
               ...node,
@@ -199,8 +172,19 @@ export const Sidebar: React.FC = () => {
             });
           }
         } else {
-          if (node.name.toLowerCase().includes(q)) {
-            result.push(node);
+          // If filtering by tag, check if note has the tag
+          if (tagFilter) {
+            const normPath = node.path.replace(/\\/g, '/').toLowerCase();
+            const noteObj = notes.find((n) => n.path.replace(/\\/g, '/').toLowerCase() === normPath);
+            const matchesTag = noteObj?.tags?.includes(tagFilter);
+            const matchesQuery = !query.trim() || node.name.toLowerCase().includes(q);
+            if (matchesTag && matchesQuery) {
+              result.push(node);
+            }
+          } else {
+            if (node.name.toLowerCase().includes(q)) {
+              result.push(node);
+            }
           }
         }
       }
@@ -208,17 +192,16 @@ export const Sidebar: React.FC = () => {
     }
 
     let tree = sortNodes(fileTree);
-    if (searchTreeQuery.trim()) {
-      tree = filterNodes(tree, searchTreeQuery.trim());
+    if (searchTreeQuery.trim() || selectedTag) {
+      tree = filterNodes(tree, searchTreeQuery.trim(), selectedTag);
     }
     return tree;
-  }, [fileTree, sortOption, searchTreeQuery]);
+  }, [fileTree, sortOption, searchTreeQuery, selectedTag, notes]);
 
   const handleStartCreate = (type: 'file' | 'folder', parentFolderRel?: string) => {
     setCreatingItem({ type, parentFolderRel });
     setCreateInputName('');
     if (parentFolderRel && vaultPath) {
-      // Auto expand target folder
       useVaultStore.getState().setFolderExpanded(`${vaultPath}/${parentFolderRel}`, true);
     }
   };
@@ -247,395 +230,397 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside
-      className={`h-full flex flex-col apple-sidebar-panel apple-vibrant select-none transition-all duration-300 ease-in-out shrink-0 overflow-hidden relative border-r border-[var(--border-subtle)] ${
-        isSidebarOpen ? 'w-72' : 'w-0 border-r-0 opacity-0 pointer-events-none'
+      className={`h-full flex flex-col bg-[#131720] border-r border-[#272C36] select-none transition-all duration-200 ease-in-out shrink-0 overflow-hidden relative ${
+        isSidebarOpen ? 'w-64 md:w-72' : 'w-0 border-r-0 opacity-0 pointer-events-none'
       }`}
     >
-
-      {/* 1. Header Toolbar (Vault Name & Obsidian Action Buttons) */}
-      <div className="p-2.5 border-b border-[var(--border-subtle)] space-y-2 bg-black/[0.01] dark:bg-white/[0.01]">
-        {/* Row 1: Title & Main Window Actions */}
+      {/* 1. Header Toolbar: App Name & Vault Switcher */}
+      <div className="p-3 border-b border-[#272C36] space-y-2.5">
         <div className="flex items-center justify-between">
           <div
             onClick={openVaultDialog}
-            title={`Cartella Vault: ${vaultPath || 'Nessuna'}\nClicca per cambiare`}
-            className="flex items-center space-x-2 min-w-0 cursor-pointer p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors macos-clickable"
+            title={`Vault: ${vaultPath || 'Nessuno'}\nClicca per cambiare cartella`}
+            className="flex items-center gap-2 min-w-0 cursor-pointer p-1 rounded-xl hover:bg-[#171B22] border border-transparent hover:border-[#272C36] transition-colors"
           >
-            <div className="w-5 h-5 rounded-md bg-[var(--accent-subtle)] flex items-center justify-center text-[var(--accent)] shrink-0 shadow-xs">
-              <FolderOpen size={12} />
+            <div className="w-6 h-6 rounded-lg bg-[#171B22] border border-[#272C36] flex items-center justify-center text-[#E5484D] shrink-0 font-bold text-xs">
+              NR
             </div>
-            <span className="text-xs font-bold text-[var(--text-primary)] truncate tracking-tight">
-              {vaultName}
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-0.5">
-            {/* Smart Q&A & Ricerca Semantica */}
-            <button
-              onClick={() => openSmartQAModal()}
-              className="p-1.5 rounded-md hover:bg-purple-500/10 dark:hover:bg-purple-500/20 text-[var(--text-secondary)] hover:text-purple-500 transition-colors"
-              title="Chiedi al Vault: Ricerca Semantica & Smart Q&A"
-            >
-              <Bot size={14} />
-            </button>
-
-            {/* Flashcard SM-2 Spaced Repetition Section */}
-            <button
-              onClick={() => setActiveView(activeView === 'flashcards' ? 'notes' : 'flashcards')}
-              className={`relative p-1.5 rounded-md transition-colors ${
-                activeView === 'flashcards'
-                  ? 'bg-amber-500/15 text-amber-500 font-semibold'
-                  : 'text-[var(--text-secondary)] hover:text-amber-500 hover:bg-amber-500/10'
-              }`}
-              title={
-                activeView === 'flashcards'
-                  ? 'Torna alle note'
-                  : `Sezione Flashcards SM-2 (${dueFlashcardsCount} in scadenza su ${flashcards.length} totali)`
-              }
-            >
-              <Brain size={14} />
-              {dueFlashcardsCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-bold bg-amber-500 text-white flex items-center justify-center shadow-xs animate-pulse">
-                  {dueFlashcardsCount}
-                </span>
-              )}
-            </button>
-
-            {/* 2D Graph View Toggle */}
-            <button
-              onClick={() => setActiveView(activeView === 'graph' ? 'notes' : 'graph')}
-              className={`p-1.5 rounded-md transition-colors ${
-                activeView === 'graph'
-                  ? 'bg-[var(--accent-subtle)] text-[var(--accent)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10'
-              }`}
-              title={activeView === 'graph' ? 'Torna alle note' : 'Visualizza Grafo 2D delle Connessioni'}
-            >
-              <Network size={14} />
-            </button>
-
-            {/* Collapse Sidebar Button */}
-            <button
-              onClick={toggleSidebar}
-              title="Nascondi barra laterale (guadagna spazio editor)"
-              className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <PanelLeftClose size={15} />
-            </button>
-          </div>
-        </div>
-
-        {/* Row 2: Obsidian-Style Tree Controls */}
-        <div className="flex items-center justify-between pt-0.5 text-xs text-[var(--text-secondary)]">
-          <div className="flex items-center space-x-0.5">
-            {/* New Note */}
-            <button
-              onClick={() => handleStartCreate('file')}
-              className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors"
-              title="Nuova Nota (File Markdown) nella cartella radice"
-            >
-              <FilePlus size={14} />
-            </button>
-
-            {/* New Folder */}
-            <button
-              onClick={() => handleStartCreate('folder')}
-              className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors"
-              title="Nuova Cartella"
-            >
-              <FolderPlus size={14} />
-            </button>
-
-            {/* Sort Popover Menu */}
-            <div className="relative" ref={sortMenuRef}>
-              <button
-                onClick={() => setShowSortMenu(!showSortMenu)}
-                className={`p-1.5 rounded-md transition-colors ${
-                  showSortMenu
-                    ? 'bg-black/10 dark:bg-white/10 text-[var(--text-primary)]'
-                    : 'hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)]'
-                }`}
-                title="Ordina file e cartelle"
-              >
-                <ArrowUpDown size={14} />
-              </button>
-
-              {showSortMenu && (
-                <div className="absolute top-8 left-0 w-52 rounded-xl apple-card-item shadow-apple-popover p-1.5 border border-black/10 dark:border-white/15 z-50 space-y-0.5 text-xs">
-                  <div className="px-2 py-1 text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
-                    Ordinamento File
-                  </div>
-                  {SORT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => {
-                        setSortOption(opt.id);
-                        setShowSortMenu(false);
-                      }}
-                      className={`w-full flex items-center justify-between p-1.5 rounded-lg text-left transition-colors ${
-                        sortOption === opt.id
-                          ? 'bg-[var(--accent-subtle)] text-[var(--accent)] font-semibold'
-                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div>
-                        <div className="text-xs">{opt.label}</div>
-                        <div className="text-[9px] text-[var(--text-muted)]">{opt.desc}</div>
-                      </div>
-                      {sortOption === opt.id && <Check size={13} className="text-[var(--accent)]" />}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="min-w-0">
+              <span className="block text-xs font-semibold text-[#F3F4F6] truncate tracking-tight">
+                {vaultName}
+              </span>
+              <span className="block text-[10px] text-[#9CA3AF] truncate">
+                {notes.length} {notes.length === 1 ? 'nota' : 'note'}
+              </span>
             </div>
-
-            {/* Expand / Collapse All */}
-            <button
-              onClick={() => {
-                const areAnyOpen = Object.values(expandedFolders).some(Boolean);
-                if (areAnyOpen) {
-                  collapseAllFolders();
-                } else {
-                  expandAllFolders();
-                }
-              }}
-              className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors"
-              title="Espandi o Comprimi tutte le cartelle"
-            >
-              <ChevronsUpDown size={14} />
-            </button>
           </div>
 
-          {/* Search Toggle */}
           <button
-            onClick={() => {
-              setShowSearchInput(!showSearchInput);
-              if (showSearchInput) setSearchTreeQuery('');
-            }}
-            className={`p-1.5 rounded-md transition-colors ${
-              showSearchInput || searchTreeQuery
-                ? 'bg-[var(--accent-subtle)] text-[var(--accent)]'
-                : 'hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)]'
-            }`}
-            title="Cerca tra file e cartelle"
+            onClick={toggleSidebar}
+            title="Chiudi Sidebar"
+            className="p-1.5 rounded-xl border border-transparent hover:border-[#272C36] hover:bg-[#171B22] text-[#9CA3AF] hover:text-[#F3F4F6] transition-colors"
           >
-            <Search size={14} />
+            <PanelLeftClose size={15} strokeWidth={1.5} />
           </button>
         </div>
 
-        {/* Row 3: Command Palette Quick Trigger (Ctrl+K) */}
-        <button
-          onClick={() => openCommandPalette()}
-          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-black/[0.03] dark:bg-white/[0.04] hover:bg-black/5 dark:hover:bg-white/10 text-xs text-[var(--text-secondary)] border border-black/5 dark:border-white/10 transition-colors shadow-2xs group"
-          title="Apri Command Palette & Quick Switcher (Ctrl+K / Cmd+K)"
-        >
-          <span className="flex items-center gap-1.5 font-medium text-[var(--text-primary)]">
-            <Sparkles size={12} className="text-amber-500 group-hover:rotate-12 transition-transform" />
-            <span>Command Palette</span>
-          </span>
-          <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-black/5 dark:bg-white/10 text-[var(--text-muted)] border border-black/5 dark:border-white/5">
-            Ctrl+K
-          </span>
-        </button>
+        {/* Primary Views Section: Notebooks / Graph / Flashcards / Ask */}
+        <div className="space-y-0.5 pt-1">
+          <button
+            onClick={() => setActiveView('notes')}
+            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              activeView === 'notes'
+                ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]/50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <BookOpen
+                size={14}
+                strokeWidth={1.5}
+                className={activeView === 'notes' ? 'text-[#E5484D]' : 'text-[#9CA3AF]'}
+              />
+              <span>Note & Taccuini</span>
+            </div>
+            <span className="text-[10px] font-mono text-[#6B7280]">{notes.length}</span>
+          </button>
 
-        {/* Inline Search Bar */}
-        {(showSearchInput || searchTreeQuery) && (
-          <div className="relative animate-in fade-in slide-in-from-top-1 duration-150 pt-1">
-            <Search size={13} className="absolute left-2.5 top-3 text-[var(--text-muted)]" />
-            <input
-              type="text"
-              value={searchTreeQuery}
-              onChange={(e) => setSearchTreeQuery(e.target.value)}
-              placeholder="Filtra file..."
-              className="w-full pl-7 pr-7 py-1 text-xs rounded-lg border border-black/10 dark:border-white/15 bg-black/[0.03] dark:bg-white/[0.03] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--text-muted)]"
-              autoFocus
-            />
-            {searchTreeQuery && (
+          <button
+            onClick={() => setActiveView('graph')}
+            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              activeView === 'graph'
+                ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]/50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Network
+                size={14}
+                strokeWidth={1.5}
+                className={activeView === 'graph' ? 'text-[#E5484D]' : 'text-[#9CA3AF]'}
+              />
+              <span>Grafo Connessioni</span>
+            </div>
+            <span className="text-[10px] text-[#6B7280]">2D</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('flashcards')}
+            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              activeView === 'flashcards'
+                ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]/50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Brain
+                size={14}
+                strokeWidth={1.5}
+                className={activeView === 'flashcards' ? 'text-[#E5484D]' : 'text-[#9CA3AF]'}
+              />
+              <span>Flashcards (SM-2)</span>
+            </div>
+            {dueFlashcardsCount > 0 ? (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-[#E5484D] text-white">
+                {dueFlashcardsCount}
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-[#6B7280]">{flashcards.length}</span>
+            )}
+          </button>
+
+          <button
+            onClick={() => openSmartQAModal()}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} strokeWidth={1.5} className="text-[#9CA3AF]" />
+              <span>Chiedi al Vault</span>
+            </div>
+            <span className="text-[9px] px-1 py-0.5 rounded bg-[#171B22] border border-[#272C36] text-[#9CA3AF]">
+              ⌘Q
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Main Middle Area: Notebooks File Tree + Tags */}
+      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+        {/* Notebooks / Files Section Header */}
+        <div>
+          <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
+            <span>Taccuini & File</span>
+            <div className="flex items-center gap-1 text-[#9CA3AF]">
               <button
-                onClick={() => setSearchTreeQuery('')}
-                className="absolute right-2 top-2.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] p-0.5"
+                onClick={() => handleStartCreate('file')}
+                className="p-1 rounded hover:bg-[#171B22] hover:text-[#F3F4F6] transition-colors"
+                title="Nuova Nota"
+              >
+                <FilePlus size={13} strokeWidth={1.5} />
+              </button>
+              <button
+                onClick={() => handleStartCreate('folder')}
+                className="p-1 rounded hover:bg-[#171B22] hover:text-[#F3F4F6] transition-colors"
+                title="Nuova Cartella"
+              >
+                <FolderPlus size={13} strokeWidth={1.5} />
+              </button>
+              <button
+                onClick={() => setShowSearchInput(!showSearchInput)}
+                className={`p-1 rounded transition-colors ${
+                  showSearchInput || searchTreeQuery
+                    ? 'bg-[#171B22] text-[#E5484D]'
+                    : 'hover:bg-[#171B22] hover:text-[#F3F4F6]'
+                }`}
+                title="Filtra file"
+              >
+                <Search size={13} strokeWidth={1.5} />
+              </button>
+              {/* Sort Menu */}
+              <div className="relative" ref={sortMenuRef}>
+                <button
+                  onClick={() => setShowSortMenu(!showSortMenu)}
+                  className="p-1 rounded hover:bg-[#171B22] hover:text-[#F3F4F6] transition-colors"
+                  title="Ordina note"
+                >
+                  <ArrowUpDown size={13} strokeWidth={1.5} />
+                </button>
+                {showSortMenu && (
+                  <div className="absolute top-6 right-0 w-48 rounded-xl bg-[#171B22] border border-[#272C36] shadow-popover p-1 z-50 space-y-0.5">
+                    <div className="px-2 py-1 text-[10px] font-bold text-[#6B7280] uppercase">
+                      Ordina per
+                    </div>
+                    {SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        onClick={() => {
+                          setSortOption(opt.id);
+                          setShowSortMenu(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left text-xs transition-colors ${
+                          sortOption === opt.id
+                            ? 'bg-[#131720] text-[#E5484D] font-medium'
+                            : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#1C212B]'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {sortOption === opt.id && <Check size={12} strokeWidth={2} />}
+                      </button>
+                    ))}
+                    <div className="border-t border-[#272C36] my-1" />
+                    <button
+                      onClick={() => {
+                        expandAllFolders();
+                        setShowSortMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 text-[11px] text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#1C212B] rounded-lg"
+                    >
+                      Espandi tutto
+                    </button>
+                    <button
+                      onClick={() => {
+                        collapseAllFolders();
+                        setShowSortMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 text-[11px] text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#1C212B] rounded-lg"
+                    >
+                      Comprimi tutto
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Inline Filter Input */}
+          {(showSearchInput || searchTreeQuery) && (
+            <div className="mb-2 px-1">
+              <div className="flex items-center px-2 py-1 rounded-xl bg-[#171B22] border border-[#272C36] text-xs">
+                <Search size={12} strokeWidth={1.5} className="text-[#6B7280] mr-1.5 shrink-0" />
+                <input
+                  type="text"
+                  value={searchTreeQuery}
+                  onChange={(e) => setSearchTreeQuery(e.target.value)}
+                  placeholder="Filtra per nome..."
+                  className="bg-transparent flex-1 text-xs text-[#F3F4F6] placeholder-[#6B7280] focus:outline-none"
+                />
+                {searchTreeQuery && (
+                  <button onClick={() => setSearchTreeQuery('')} className="text-[#6B7280] hover:text-[#F3F4F6]">
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Root inline creation */}
+          {creatingItem && !creatingItem.parentFolderRel && (
+            <div className="flex items-center gap-1.5 p-1.5 rounded-xl bg-[#171B22] border border-[#E5484D] my-1">
+              {creatingItem.type === 'file' ? (
+                <FilePlus size={13} strokeWidth={1.5} className="text-[#E5484D] shrink-0 ml-1" />
+              ) : (
+                <FolderPlus size={13} strokeWidth={1.5} className="text-[#E5484D] shrink-0 ml-1" />
+              )}
+              <input
+                ref={createInputRef}
+                type="text"
+                value={createInputName}
+                onChange={(e) => setCreateInputName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSubmitCreate();
+                  if (e.key === 'Escape') handleCancelCreate();
+                }}
+                placeholder={creatingItem.type === 'file' ? 'Nome nota...' : 'Nome cartella...'}
+                className="flex-1 bg-transparent text-xs text-[#F3F4F6] focus:outline-none placeholder-[#6B7280]"
+              />
+              <button
+                onClick={handleSubmitCreate}
+                className="p-1 text-[#4ADE80] hover:bg-[#131720] rounded"
+                title="Conferma"
+              >
+                <Check size={12} strokeWidth={2} />
+              </button>
+              <button
+                onClick={handleCancelCreate}
+                className="p-1 text-[#6B7280] hover:text-[#F3F4F6] hover:bg-[#131720] rounded"
+                title="Annulla"
               >
                 <X size={12} />
               </button>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
 
-      {/* 2. File Tree Scrollable View */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5 text-xs select-none">
-        {/* Inline Create Row at Root */}
-        {creatingItem && !creatingItem.parentFolderRel && (
-          <div className="flex items-center gap-1.5 p-1 rounded-lg bg-[var(--accent-subtle)] border border-[var(--accent)]/40 mb-1.5 animate-in fade-in duration-150">
-            {creatingItem.type === 'file' ? (
-              <FilePlus size={13} className="text-[var(--accent)] shrink-0 ml-1" />
-            ) : (
-              <FolderPlus size={13} className="text-[var(--accent)] shrink-0 ml-1" />
-            )}
-            <input
-              ref={createInputRef}
-              type="text"
-              value={createInputName}
-              onChange={(e) => setCreateInputName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSubmitCreate();
-                if (e.key === 'Escape') handleCancelCreate();
-              }}
-              placeholder={creatingItem.type === 'file' ? 'Nome nota...' : 'Nome cartella...'}
-              className="flex-1 bg-transparent text-xs text-[var(--text-primary)] focus:outline-none placeholder:text-[var(--text-muted)]"
-            />
-            <button
-              onClick={handleSubmitCreate}
-              className="p-1 text-emerald-500 hover:bg-emerald-500/20 rounded transition-colors"
-              title="Conferma (Invio)"
-            >
-              <Check size={13} />
-            </button>
-            <button
-              onClick={handleCancelCreate}
-              className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 rounded transition-colors"
-              title="Annulla (Esc)"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        )}
-
-        {/* Tree Nodes */}
-        {processedTree.length === 0 ? (
-          <div className="py-8 text-center text-xs text-[var(--text-muted)] space-y-2">
-            <p>Nessun file o cartella trovato.</p>
-            <button
-              onClick={() => handleStartCreate('file')}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--accent-subtle)] text-[var(--accent)] font-medium text-[11px] hover:opacity-80 transition-opacity"
-            >
-              <FilePlus size={12} />
-              <span>Crea la prima nota</span>
-            </button>
-          </div>
-        ) : (
-          processedTree.map((node) => (
-            <TreeNode
-              key={node.path}
-              node={node}
-              depth={0}
-              parentRel=""
-              vaultPath={vaultPath || ''}
-              activeNotePath={activeNotePath}
-              expandedFolders={expandedFolders}
-              creatingItem={creatingItem}
-              createInputName={createInputName}
-              createInputRef={createInputRef}
-              renamingPath={renamingPath}
-              renamingName={renamingName}
-              toggleFolder={toggleFolder}
-              selectNote={selectNote}
-              deleteNote={deleteNote}
-              deleteFolder={deleteFolder}
-              renameNote={renameNote}
-              onStartCreate={handleStartCreate}
-              setCreateInputName={setCreateInputName}
-              onSubmitCreate={handleSubmitCreate}
-              onCancelCreate={handleCancelCreate}
-              onStartRename={(path, currentName) => {
-                setRenamingPath(path);
-                setRenamingName(currentName);
-              }}
-              setRenamingName={setRenamingName}
-              onSubmitRename={async () => {
-                if (renamingPath && renamingName.trim()) {
-                  await renameNote(renamingPath, renamingName);
-                }
-                setRenamingPath(null);
-                setRenamingName('');
-              }}
-              onCancelRename={() => {
-                setRenamingPath(null);
-                setRenamingName('');
-              }}
-            />
-          ))
-        )}
-      </div>
-
-      {/* 3. Bottom Utility Bar: Git Sync, Themes & Local-First */}
-      <div className="p-2.5 border-t border-black/5 dark:border-white/10 space-y-2 bg-black/[0.01] dark:bg-white/[0.01] relative">
-        <div className="flex items-center justify-between text-xs">
-          {/* Sync Button & Modal Trigger */}
-          <button
-            onClick={toggleSyncModal}
-            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-[var(--text-primary)] transition-colors"
-            title="Gestisci Sincronizzazione Vault (Cartella Cloud, Git, P2P)"
-          >
-            <Cloud size={13} className="text-[var(--accent)]" />
-            <span>Sync</span>
-            {autoSyncInterval !== 'off' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-xs" title={`Auto-sync attivo: ${autoSyncInterval}`} />
-            )}
-            {gitStatus.isSyncing && <RefreshCw size={11} className="animate-spin ml-0.5 text-[var(--accent)]" />}
-          </button>
-
-          {/* Theme Selector Popover */}
-          <div className="relative" ref={themeMenuRef}>
-            <button
-              onClick={() => setShowThemeMenu(!showThemeMenu)}
-              className="flex items-center space-x-1.5 px-2 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-[11px]"
-              title="Cambia tema (Catppuccin Mocha, Latte, Dark, Light)"
-            >
-              <Palette size={14} className="text-[var(--accent)]" />
-              <span className="font-medium text-[10px] hidden sm:inline truncate max-w-[85px]">
-                {currentThemeObj.name.replace('Catppuccin ', '')}
-              </span>
-            </button>
-
-            {showThemeMenu && (
-              <div className="absolute bottom-9 right-0 w-56 rounded-2xl apple-card-item shadow-apple-popover p-2 border border-black/10 dark:border-white/15 z-50 space-y-1">
-                <div className="px-2 py-1 text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
-                  Temi & Riposo Visivo
-                </div>
-                {THEME_OPTIONS.map((opt) => {
-                  const isSelected = theme === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      onClick={() => {
-                        setTheme(opt.id);
-                        setShowThemeMenu(false);
-                      }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl text-xs transition-colors ${
-                        isSelected
-                          ? 'bg-[var(--accent-subtle)] text-[var(--text-primary)] font-semibold border border-[var(--border-strong)]'
-                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <div
-                          className="w-3.5 h-3.5 rounded-full border border-black/20 dark:border-white/20 shrink-0 shadow-xs"
-                          style={{ backgroundColor: opt.bgPreview, borderColor: opt.accentPreview }}
-                        />
-                        <div className="text-left">
-                          <span className="block text-xs leading-tight">{opt.name}</span>
-                          <span className="text-[9px] text-[var(--text-muted)] block">
-                            {opt.category === 'Eye Comfort' ? '★ Anti-affaticamento' : 'Stile OS'}
-                          </span>
-                        </div>
-                      </div>
-                      {isSelected && <Check size={14} className="text-[var(--accent)]" />}
-                    </button>
-                  );
-                })}
+          {/* Tree Nodes List */}
+          <div className="space-y-0.5">
+            {processedTree.length === 0 ? (
+              <div className="py-6 text-center text-xs text-[#6B7280] space-y-2">
+                <p>Nessun appunto trovato.</p>
+                <button
+                  onClick={() => handleStartCreate('file')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#171B22] border border-[#272C36] text-[#F3F4F6] text-xs hover:border-[#E5484D] transition-colors"
+                >
+                  <FilePlus size={12} strokeWidth={1.5} />
+                  <span>Crea prima nota</span>
+                </button>
               </div>
+            ) : (
+              processedTree.map((node) => (
+                <TreeNode
+                  key={node.path}
+                  node={node}
+                  depth={0}
+                  parentRel=""
+                  vaultPath={vaultPath || ''}
+                  activeNotePath={activeNotePath}
+                  expandedFolders={expandedFolders}
+                  creatingItem={creatingItem}
+                  createInputName={createInputName}
+                  createInputRef={createInputRef}
+                  renamingPath={renamingPath}
+                  renamingName={renamingName}
+                  toggleFolder={toggleFolder}
+                  selectNote={selectNote}
+                  deleteNote={deleteNote}
+                  deleteFolder={deleteFolder}
+                  renameNote={renameNote}
+                  onStartCreate={handleStartCreate}
+                  setCreateInputName={setCreateInputName}
+                  onSubmitCreate={handleSubmitCreate}
+                  onCancelCreate={handleCancelCreate}
+                  onStartRename={(path, currentName) => {
+                    setRenamingPath(path);
+                    setRenamingName(currentName);
+                  }}
+                  setRenamingName={setRenamingName}
+                  onSubmitRename={async () => {
+                    if (renamingPath && renamingName.trim()) {
+                      await renameNote(renamingPath, renamingName);
+                    }
+                    setRenamingPath(null);
+                    setRenamingName('');
+                  }}
+                  onCancelRename={() => {
+                    setRenamingPath(null);
+                    setRenamingName('');
+                  }}
+                />
+              ))
             )}
           </div>
         </div>
 
-        {/* Local-First Indicator */}
-        <div className="flex items-center justify-between pt-1 border-t border-black/5 dark:border-white/5 text-[10px] text-[var(--text-muted)]">
-          <span className="flex items-center space-x-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>Local-First Vault (.md)</span>
-          </span>
-          <span className="text-[9px]">Zero Lock-in</span>
+        {/* 3. Dedicated Tags Section (Prompt requirement: Notebooks, Tags and Graph) */}
+        <div className="pt-2 border-t border-[#272C36]">
+          <div className="flex items-center justify-between px-2 pb-1.5 text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
+            <div className="flex items-center gap-1.5">
+              <Hash size={12} strokeWidth={1.5} />
+              <span>Tag ({allTagsWithCounts.length})</span>
+            </div>
+            {selectedTag && (
+              <button
+                onClick={() => setSelectedTag(null)}
+                className="text-[10px] text-[#E5484D] hover:underline flex items-center gap-0.5"
+                title="Cancella filtro tag"
+              >
+                <span>Cancella</span>
+                <X size={10} />
+              </button>
+            )}
+          </div>
+
+          {allTagsWithCounts.length === 0 ? (
+            <p className="px-2 text-xs text-[#6B7280] italic">
+              Nessun tag. Aggiungi <span className="font-mono text-[#9CA3AF]">#tag</span> nelle note.
+            </p>
+          ) : (
+            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
+              {allTagsWithCounts.map(({ tag, count }) => {
+                const isSelected = selectedTag === tag;
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => setSelectedTag(isSelected ? null : tag)}
+                    className={`w-full flex items-center justify-between px-2 py-1 rounded-lg text-xs transition-colors ${
+                      isSelected
+                        ? 'bg-[#171B22] text-[#F3F4F6] border border-[#E5484D] font-medium'
+                        : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="text-[#E5484D] font-mono text-[11px]">#</span>
+                      <span className="truncate">{tag}</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-[#6B7280] bg-[#131720] px-1.5 py-0.2 rounded border border-[#272C36]">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 4. Bottom Utility Bar: Git Sync & Local-First indicator */}
+      <div className="p-3 border-t border-[#272C36] bg-[#0E1116] space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <button
+            onClick={toggleSyncModal}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-[#171B22] border border-[#272C36] hover:border-[#3A4150] text-[#F3F4F6] transition-colors"
+            title="Gestisci Sincronizzazione Vault (Git / Cloud)"
+          >
+            <Cloud size={13} strokeWidth={1.5} className="text-[#9CA3AF]" />
+            <span>Sync</span>
+            {autoSyncInterval !== 'off' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80]" title={`Auto-sync: ${autoSyncInterval}`} />
+            )}
+            {gitStatus.isSyncing && <RefreshCw size={11} strokeWidth={1.5} className="animate-spin text-[#E5484D]" />}
+          </button>
+
+          <div className="flex items-center gap-1.5 text-[10px] text-[#6B7280]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80]" />
+            <span>Local-First</span>
+          </div>
         </div>
       </div>
     </aside>
@@ -643,7 +628,7 @@ export const Sidebar: React.FC = () => {
 };
 
 // ==========================================
-// Recursive Tree Node Component (Obsidian Style)
+// Recursive Tree Node Component
 // ==========================================
 interface TreeNodeProps {
   node: FileNode;
@@ -706,7 +691,6 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   const isCreatingInside = creatingItem && creatingItem.parentFolderRel === currentRel;
   const isRenaming = renamingPath === node.path;
 
-  // Close context menu on outside click
   useEffect(() => {
     if (!contextMenu) return;
     function handleClick(e: MouseEvent) {
@@ -718,7 +702,6 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [contextMenu]);
 
-  // Autofocus rename input
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
       renameInputRef.current.focus();
@@ -729,84 +712,68 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   if (node.is_dir) {
     return (
       <div className="space-y-0.5">
-        {/* Folder Row Header */}
         <div
           onClick={() => toggleFolder(node.path)}
           className={`group flex items-center justify-between ${
             depth === 0 ? 'px-2' : 'px-1.5'
-          } py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors duration-150 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5 macos-clickable`}
+          } py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]`}
         >
-          <div className="flex items-center space-x-1.5 min-w-0">
-            {/* Animated Rotating Chevron */}
-            <span className="text-[var(--text-muted)] shrink-0 transition-transform duration-150 ease-out">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[#6B7280] shrink-0 transition-transform duration-150 ease-out">
               <ChevronRight
                 size={13}
-                className={`transform transition-transform duration-150 ${
-                  isExpanded ? 'rotate-90 text-[var(--text-primary)]' : ''
-                }`}
+                strokeWidth={1.5}
+                className={`transform transition-transform ${isExpanded ? 'rotate-90 text-[#F3F4F6]' : ''}`}
               />
             </span>
-            <Folder size={13} className="text-[#0A84FF] shrink-0" />
-            <span className="truncate text-xs font-medium tracking-tight">{node.name}</span>
+            <Folder size={13} strokeWidth={1.5} className="text-[#9CA3AF] shrink-0" />
+            <span className="truncate text-xs font-medium">{node.name}</span>
           </div>
 
-          {/* Folder Action Buttons (Show on hover) */}
-          <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                useVaultStore.getState().openFlashcardSession(node.name);
-              }}
-              className="p-1 hover:bg-amber-500/15 hover:text-amber-500 rounded text-[var(--text-secondary)]"
-              title={`Ripassa Flashcards di "${node.name}"`}
-            >
-              <Brain size={12} />
-            </button>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onStartCreate('file', currentRel);
               }}
-              className="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              className="p-1 hover:bg-[#1C212B] rounded text-[#9CA3AF] hover:text-[#F3F4F6]"
               title={`Nuova nota dentro "${node.name}"`}
             >
-              <FilePlus size={12} />
+              <FilePlus size={12} strokeWidth={1.5} />
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onStartCreate('folder', currentRel);
               }}
-              className="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              title={`Nuova sottocartella dentro "${node.name}"`}
+              className="p-1 hover:bg-[#1C212B] rounded text-[#9CA3AF] hover:text-[#F3F4F6]"
+              title={`Nuova sottocartella`}
             >
-              <FolderPlus size={12} />
+              <FolderPlus size={12} strokeWidth={1.5} />
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Eliminare la cartella "${node.name}" e tutto il suo contenuto?`)) {
+                if (confirm(`Eliminare la cartella "${node.name}" e il suo contenuto?`)) {
                   deleteFolder(node.path);
                 }
               }}
-              className="p-1 hover:bg-rose-500/20 hover:text-rose-500 rounded text-[var(--text-muted)]"
+              className="p-1 hover:bg-[#E5484D]/20 hover:text-[#E5484D] rounded text-[#6B7280]"
               title="Elimina cartella"
             >
-              <Trash2 size={12} />
+              <Trash2 size={12} strokeWidth={1.5} />
             </button>
           </div>
         </div>
 
-        {/* Folder Children (Nested with vertical guide line like Obsidian) */}
         {isExpanded && (
-          <div className="ml-2.5 pl-2 border-l border-black/10 dark:border-white/10 space-y-0.5 animate-in fade-in slide-in-from-top-0.5 duration-150">
-            {/* Inline creation input inside this folder */}
+          <div className="ml-2.5 pl-2 border-l border-[#272C36] space-y-0.5">
             {isCreatingInside && (
-              <div className="flex items-center gap-1.5 p-1 rounded-lg bg-[var(--accent-subtle)] border border-[var(--accent)]/40 my-1 animate-in fade-in duration-150">
+              <div className="flex items-center gap-1.5 p-1 rounded-lg bg-[#171B22] border border-[#E5484D] my-1">
                 {creatingItem.type === 'file' ? (
-                  <FilePlus size={12} className="text-[var(--accent)] shrink-0 ml-1" />
+                  <FilePlus size={12} strokeWidth={1.5} className="text-[#E5484D] shrink-0 ml-1" />
                 ) : (
-                  <FolderPlus size={12} className="text-[var(--accent)] shrink-0 ml-1" />
+                  <FolderPlus size={12} strokeWidth={1.5} className="text-[#E5484D] shrink-0 ml-1" />
                 )}
                 <input
                   ref={createInputRef}
@@ -818,18 +785,18 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                     if (e.key === 'Escape') onCancelCreate();
                   }}
                   placeholder={creatingItem.type === 'file' ? 'Nome nota...' : 'Nome cartella...'}
-                  className="flex-1 bg-transparent text-xs text-[var(--text-primary)] focus:outline-none placeholder:text-[var(--text-muted)]"
+                  className="flex-1 bg-transparent text-xs text-[#F3F4F6] focus:outline-none placeholder-[#6B7280]"
                 />
                 <button
                   onClick={onSubmitCreate}
-                  className="p-1 text-emerald-500 hover:bg-emerald-500/20 rounded transition-colors"
+                  className="p-1 text-[#4ADE80] hover:bg-[#131720] rounded"
                   title="Conferma"
                 >
-                  <Check size={12} />
+                  <Check size={12} strokeWidth={2} />
                 </button>
                 <button
                   onClick={onCancelCreate}
-                  className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 rounded transition-colors"
+                  className="p-1 text-[#6B7280] hover:text-[#F3F4F6] hover:bg-[#131720] rounded"
                   title="Annulla"
                 >
                   <X size={12} />
@@ -869,7 +836,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               ))
             ) : (
               !isCreatingInside && (
-                <div className="py-1 px-2 text-[10px] text-[var(--text-muted)] italic">
+                <div className="py-1 px-2 text-[10px] text-[#6B7280] italic">
                   Cartella vuota
                 </div>
               )
@@ -880,7 +847,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     );
   }
 
-  // File / Note Item
+  // File Item
   const isActive = activeNotePath === node.path;
   const cleanTitle = node.name.replace(/\.(md|markdown|txt)$/i, '');
 
@@ -895,16 +862,17 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         }}
         className={`group flex items-center justify-between ${
           depth === 0 ? 'px-2.5' : 'px-2'
-        } py-1.5 rounded-lg text-xs cursor-pointer macos-clickable transition-all duration-150 ${
+        } py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
           isActive
-            ? 'tree-item-active font-medium shadow-xs'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+            ? 'bg-[#171B22] border-l-2 border-[#E5484D] text-[#F3F4F6] font-medium'
+            : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]'
         }`}
       >
-        <div className="flex items-center space-x-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           <FileText
             size={13}
-            className={`shrink-0 ${isActive ? 'text-white' : 'text-[var(--text-muted)]'}`}
+            strokeWidth={1.5}
+            className={`shrink-0 ${isActive ? 'text-[#E5484D]' : 'text-[#6B7280]'}`}
           />
           {isRenaming ? (
             <input
@@ -918,49 +886,27 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               }}
               onBlur={onSubmitRename}
               onClick={(e) => e.stopPropagation()}
-              className={`flex-1 bg-transparent text-xs font-medium focus:outline-none border-b ${
-                isActive
-                  ? 'text-white border-white/50 placeholder:text-white/50'
-                  : 'text-[var(--text-primary)] border-[var(--accent)]/50 placeholder:text-[var(--text-muted)]'
-              }`}
+              className="flex-1 bg-transparent text-xs font-medium focus:outline-none border-b border-[#E5484D] text-[#F3F4F6]"
               placeholder="Nuovo nome..."
             />
           ) : (
-            <span className={`truncate text-xs tracking-tight ${isActive ? 'text-white' : ''}`}>
+            <span className={`truncate text-xs ${isActive ? 'text-[#F3F4F6]' : ''}`}>
               {cleanTitle}
             </span>
           )}
         </div>
 
         {!isRenaming && (
-          <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                useVaultStore.getState().openFlashcardSession(null, node.path);
-              }}
-              className={`p-1 rounded transition-colors ${
-                isActive
-                  ? 'text-white/80 hover:text-white hover:bg-white/20'
-                  : 'hover:bg-amber-500/15 hover:text-amber-500 text-[var(--text-muted)]'
-              }`}
-              title={`Ripassa Flashcards di "${cleanTitle}"`}
-            >
-              <Brain size={12} />
-            </button>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onStartRename(node.path, cleanTitle);
               }}
-              className={`p-1 rounded transition-colors ${
-                isActive
-                  ? 'text-white/80 hover:text-white hover:bg-white/20'
-                  : 'hover:bg-blue-500/15 hover:text-blue-500 text-[var(--text-muted)]'
-              }`}
+              className="p-1 rounded text-[#6B7280] hover:text-[#F3F4F6] hover:bg-[#1C212B]"
               title="Rinomina nota"
             >
-              <Pencil size={12} />
+              <Pencil size={12} strokeWidth={1.5} />
             </button>
             <button
               onClick={(e) => {
@@ -969,24 +915,19 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   deleteNote(node.path);
                 }
               }}
-              className={`p-1 rounded transition-colors ${
-                isActive
-                  ? 'text-white/80 hover:text-white hover:bg-white/20'
-                  : 'hover:bg-rose-500/20 hover:text-rose-500 text-[var(--text-muted)]'
-              }`}
+              className="p-1 rounded text-[#6B7280] hover:text-[#E5484D] hover:bg-[#E5484D]/20"
               title="Elimina nota"
             >
-              <Trash2 size={12} />
+              <Trash2 size={12} strokeWidth={1.5} />
             </button>
           </div>
         )}
       </div>
 
-      {/* Right-click Context Menu */}
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[999] min-w-[160px] rounded-xl shadow-apple-popover border border-black/10 dark:border-white/15 p-1 text-xs apple-card-item"
+          className="fixed z-[999] min-w-[160px] rounded-xl shadow-popover border border-[#272C36] p-1 text-xs bg-[#171B22]"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
@@ -994,9 +935,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               setContextMenu(null);
               onStartRename(node.path, cleanTitle);
             }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[var(--text-primary)] hover:bg-[var(--accent-subtle)] hover:text-[var(--accent)] transition-colors"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
           >
-            <Pencil size={13} />
+            <Pencil size={13} strokeWidth={1.5} />
             <span>Rinomina</span>
           </button>
           <button
@@ -1006,9 +947,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 deleteNote(node.path);
               }
             }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-rose-500 hover:bg-rose-500/10 transition-colors"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#E5484D] hover:bg-[#E5484D]/15 transition-colors"
           >
-            <Trash2 size={13} />
+            <Trash2 size={13} strokeWidth={1.5} />
             <span>Elimina</span>
           </button>
         </div>

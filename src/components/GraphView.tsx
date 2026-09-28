@@ -360,18 +360,14 @@ export const GraphView: React.FC = () => {
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.k, transform.k);
 
-      const isMocha = theme === 'catppuccin-mocha' || isDarkMode;
-      const isLatte = theme === 'catppuccin-latte';
-      const isDark = isDarkMode;
+      // Crimson Noir color palette for graph rendering
+      const wikilinkColor = 'rgba(229, 72, 77, 0.45)';
+      const mentionColor = 'rgba(96, 165, 250, 0.6)';
+      const tagColor = 'rgba(251, 146, 60, 0.5)';
 
-      // Theme-specific color palettes for rendering
-      const wikilinkColor = isMocha ? 'rgba(203, 166, 247, 0.45)' : isDark ? 'rgba(245, 158, 11, 0.45)' : 'rgba(234, 168, 36, 0.55)';
-      const mentionColor = isMocha ? 'rgba(137, 220, 235, 0.65)' : isDark ? 'rgba(56, 189, 248, 0.6)' : 'rgba(14, 165, 233, 0.7)';
-      const tagColor = isMocha ? 'rgba(250, 179, 135, 0.55)' : isDark ? 'rgba(251, 146, 60, 0.5)' : 'rgba(234, 88, 12, 0.6)';
-
-      const nodeDefaultColor = isMocha ? '#45475a' : isLatte ? '#bcc0cc' : isDark ? '#4B5563' : '#AEAEB2';
-      const textColor = isMocha ? '#cdd6f4' : isLatte ? '#4c4f69' : isDark ? '#F5F5F7' : '#1D1D1F';
-      const activeAccent = isMocha ? '#cba6f7' : isLatte ? '#8839ef' : isDark ? '#F59E0B' : '#EAA824';
+      const nodeDefaultColor = '#272C36';
+      const textColor = '#F3F4F6';
+      const activeAccent = '#E5484D';
 
       const searchFilterLower = graphSettings.searchFilter.trim().toLowerCase();
 
@@ -398,16 +394,16 @@ export const GraphView: React.FC = () => {
           ctx.strokeStyle = isHighlighted ? activeAccent : wikilinkColor;
           ctx.lineWidth = (isHighlighted ? 2.2 : 1.2) / transform.k;
         } else if (link.type === 'mention') {
-          // Unlinked Mention: Dashed sky blue line
+          // Unlinked Mention: Dashed line
           ctx.setLineDash([5, 4]);
-          ctx.strokeStyle = isHighlighted ? (isMocha ? '#89dceb' : '#0284c7') : mentionColor;
+          ctx.strokeStyle = isHighlighted ? '#60A5FA' : mentionColor;
           const occ = link.mentionData?.occurrenceCount || 1;
           const dynamicWidth = Math.min(3.5, 1.2 + occ * 0.35);
           ctx.lineWidth = (isHighlighted ? dynamicWidth + 1.2 : dynamicWidth) / transform.k;
         } else if (link.type === 'tag') {
-          // Shared Tag: Dotted peach / mauve line
+          // Shared Tag: Dotted line
           ctx.setLineDash([2, 4]);
-          ctx.strokeStyle = isHighlighted ? (isMocha ? '#fab387' : '#ea580c') : tagColor;
+          ctx.strokeStyle = isHighlighted ? '#FB923C' : tagColor;
           ctx.lineWidth = (isHighlighted ? 2 : 1.1) / transform.k;
         }
 
@@ -436,10 +432,10 @@ export const GraphView: React.FC = () => {
           ctx.beginPath();
           ctx.arc(node.x, node.y, radius + 4.5 / transform.k, 0, 2 * Math.PI);
           ctx.fillStyle = isActive
-            ? isMocha ? 'rgba(203, 166, 247, 0.35)' : 'rgba(245, 158, 11, 0.35)'
+            ? 'rgba(229, 72, 77, 0.35)'
             : matchesSearch
-            ? 'rgba(249, 226, 175, 0.4)'
-            : 'rgba(180, 190, 254, 0.25)';
+            ? 'rgba(251, 146, 60, 0.35)'
+            : 'rgba(255, 255, 255, 0.15)';
           ctx.fill();
         }
 
@@ -449,7 +445,7 @@ export const GraphView: React.FC = () => {
         if (isActive) {
           ctx.fillStyle = activeAccent;
         } else if (matchesSearch) {
-          ctx.fillStyle = isMocha ? '#f9e2af' : '#d97706';
+          ctx.fillStyle = '#FB923C';
         } else if (graphSettings.groupByFolder) {
           ctx.fillStyle = node.folderColor;
         } else {
@@ -458,7 +454,7 @@ export const GraphView: React.FC = () => {
         ctx.fill();
 
         // Node border
-        ctx.strokeStyle = isMocha ? '#1e1e2e' : isDark ? '#1C1C1E' : '#FFFFFF';
+        ctx.strokeStyle = '#0E1116';
         ctx.lineWidth = 1.6 / transform.k;
         ctx.stroke();
 
@@ -468,7 +464,7 @@ export const GraphView: React.FC = () => {
 
         if (showLabel) {
           ctx.font = `${Math.max(10, 11 / transform.k)}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-          ctx.fillStyle = isActive || isHovered ? activeAccent : matchesSearch ? (isMocha ? '#f9e2af' : '#b45309') : textColor;
+          ctx.fillStyle = isActive || isHovered ? activeAccent : matchesSearch ? '#FB923C' : textColor;
           ctx.textAlign = 'center';
           ctx.fillText(node.label, node.x, node.y + radius + 11.5 / transform.k);
         }

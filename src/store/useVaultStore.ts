@@ -19,7 +19,7 @@ import {
 } from '../services/flashcardService';
 import { semanticSearchEngine } from '../services/semanticSearchService';
 
-export type AppTheme = 'catppuccin-mocha' | 'catppuccin-latte';
+export type AppTheme = 'crimson-noir';
 export type AutoSyncOption = 'off' | 'on_save' | '5m' | '15m';
 export type FileSortOption = 'name-asc' | 'name-desc' | 'date-newest' | 'date-oldest';
 
@@ -45,6 +45,7 @@ interface VaultState {
   saveError: string | null;
   lastSavedTime: number | null;
   selectedFolder: string | null;
+  selectedTag: string | null;
   searchQuery: string;
   activeView: 'notes' | 'graph' | 'flashcards';
   isInspectorOpen: boolean;
@@ -121,6 +122,7 @@ interface VaultState {
   navigateToWikiLink: (targetName: string) => Promise<void>;
   runGitSync: (commitMsg?: string) => Promise<void>;
   setSelectedFolder: (folder: string | null) => void;
+  setSelectedTag: (tag: string | null) => void;
   setSearchQuery: (query: string) => void;
   setSortOption: (option: FileSortOption) => void;
   toggleFolder: (path: string) => void;
@@ -269,31 +271,16 @@ function getInitialAutoSync(): AutoSyncOption {
   return 'off';
 }
 
-export function applyAppTheme(theme: AppTheme) {
+export function applyAppTheme(_theme: AppTheme = 'crimson-noir') {
   const root = document.documentElement;
-  root.classList.remove('theme-mocha', 'theme-latte', 'theme-dark', 'theme-light', 'dark');
-  root.setAttribute('data-theme', theme);
-
-  if (theme === 'catppuccin-mocha') {
-    root.classList.add('theme-mocha', 'dark');
-  } else if (theme === 'catppuccin-latte') {
-    root.classList.add('theme-latte');
-  }
-}
-
-function getInitialTheme(): AppTheme {
-  const saved = localStorage.getItem(THEME_KEY);
-  if (saved === 'catppuccin-mocha' || saved === 'catppuccin-latte') {
-    return saved;
-  }
-  // Default to Catppuccin Mocha for eye comfort as requested
-  return 'catppuccin-mocha';
+  root.classList.remove('theme-mocha', 'theme-latte', 'theme-dark', 'theme-light');
+  root.classList.add('dark', 'theme-crimson-noir');
+  root.setAttribute('data-theme', 'crimson-noir');
 }
 
 let lastHistorySnapshotTime = 0;
 
 export const useVaultStore = create<VaultState>((set, get) => {
-  const initialTheme = getInitialTheme();
   const initialAutoSync = getInitialAutoSync();
 
   return {
@@ -311,12 +298,13 @@ export const useVaultStore = create<VaultState>((set, get) => {
     saveError: null,
     lastSavedTime: null,
     selectedFolder: null,
+    selectedTag: null,
     searchQuery: '',
     activeView: 'notes',
     isSidebarOpen: true,
     isInspectorOpen: true,
-    theme: initialTheme,
-    isDarkMode: initialTheme === 'catppuccin-mocha',
+    theme: 'crimson-noir',
+    isDarkMode: true,
     autoLinkMentions: true, // Default to true so intelligent connections are active
 
     graphSettings: {
@@ -365,8 +353,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
     newFlashcardInitialDeck: '',
 
     initialize: async () => {
-      const theme = getInitialTheme();
-      applyAppTheme(theme);
+      applyAppTheme('crimson-noir');
 
       const appFont = getInitialAppFont();
       const editorFont = getInitialEditorFont();
@@ -846,24 +833,24 @@ export const useVaultStore = create<VaultState>((set, get) => {
     },
 
     setSelectedFolder: (folder: string | null) => set({ selectedFolder: folder }),
+    setSelectedTag: (tag: string | null) => set({ selectedTag: tag }),
     setSearchQuery: (query: string) => set({ searchQuery: query }),
     setActiveView: (view: 'notes' | 'graph' | 'flashcards') => set({ activeView: view }),
     toggleInspector: () => set((state) => ({ isInspectorOpen: !state.isInspectorOpen })),
     toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
-    setTheme: (newTheme: AppTheme) => {
-      localStorage.setItem(THEME_KEY, newTheme);
-      applyAppTheme(newTheme);
+    setTheme: (_newTheme: AppTheme) => {
+      localStorage.setItem(THEME_KEY, 'crimson-noir');
+      applyAppTheme('crimson-noir');
       set({
-        theme: newTheme,
-        isDarkMode: newTheme === 'catppuccin-mocha',
+        theme: 'crimson-noir',
+        isDarkMode: true,
       });
     },
 
     toggleDarkMode: () => {
-      const current = get().theme;
-      const nextTheme: AppTheme = current === 'catppuccin-mocha' ? 'catppuccin-latte' : 'catppuccin-mocha';
-      get().setTheme(nextTheme);
+      applyAppTheme('crimson-noir');
+      set({ theme: 'crimson-noir', isDarkMode: true });
     },
 
     setEditorWidth: (width: number) => {

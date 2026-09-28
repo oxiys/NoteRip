@@ -1,9 +1,11 @@
 import React, { useEffect, Suspense, lazy } from 'react';
 import { useVaultStore } from './store/useVaultStore';
 import { Sidebar } from './components/Sidebar';
+import { TopBar } from './components/TopBar';
 import { EditorView } from './components/EditorView';
 import { InspectorPanel } from './components/InspectorPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { FolderOpen } from 'lucide-react';
 
 // Lazy-loaded heavy views and modals to minimize initial V8 heap and RAM footprint
 const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })));
@@ -52,50 +54,58 @@ export const App: React.FC = () => {
   }, [toggleCommandPalette, toggleSmartQAModal]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-app)] text-[var(--text-primary)] font-sans antialiased transition-colors duration-200">
-      {/* Column 1: Sidebar (Navigation / Vault & Unified Obsidian Tree) */}
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0E1116] text-[#F3F4F6] font-sans antialiased">
+      {/* Column 1: Left Sidebar (Notebooks, Tags, Graph section) */}
       <Sidebar />
 
       {/* Main Content Area */}
-      {activeView === 'graph' ? (
-        /* Fullscreen Interactive Physics Graph (Lazy loaded) */
-        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-[var(--text-muted)]">Caricamento Grafo...</div>}>
-          <GraphView />
-        </Suspense>
-      ) : activeView === 'flashcards' ? (
-        /* Fullscreen Dedicated Flashcards Section (Lazy loaded) */
-        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-[var(--text-muted)]">Caricamento Flashcards...</div>}>
-          <FlashcardsView />
-        </Suspense>
-      ) : (
-        /* Obsidian-Style Layout: Main Markdown Editor & Live Preview with Floating Inspector Card */
-        <ErrorBoundary fallbackTitle="Errore nel caricamento della nota">
-          <div className="flex-1 h-full flex relative overflow-hidden min-w-0">
-            <EditorView />
-            <InspectorPanel />
-          </div>
-        </ErrorBoundary>
-      )}
+      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0E1116] min-w-0">
+        {/* Top Search Bar & Quick Capture Bar */}
+        <TopBar />
+
+        {/* Workspace Body */}
+        <div className="flex-1 flex overflow-hidden relative">
+          {activeView === 'graph' ? (
+            /* Fullscreen Interactive Physics Graph (Lazy loaded) */
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-[#9CA3AF]">Caricamento Grafo...</div>}>
+              <GraphView />
+            </Suspense>
+          ) : activeView === 'flashcards' ? (
+            /* Fullscreen Dedicated Flashcards Section (Lazy loaded) */
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-[#9CA3AF]">Caricamento Flashcards...</div>}>
+              <FlashcardsView />
+            </Suspense>
+          ) : (
+            /* Main Markdown Editor with Generous Spacing & Docked Right Properties Panel */
+            <ErrorBoundary fallbackTitle="Errore nel caricamento della nota">
+              <div className="flex-1 h-full flex overflow-hidden min-w-0">
+                <EditorView />
+                <InspectorPanel />
+              </div>
+            </ErrorBoundary>
+          )}
+        </div>
+      </div>
 
       {/* Empty Vault Onboarding Overlay if no vault is selected */}
       {!vaultPath && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 apple-vibrant p-4">
-          <div className="w-full max-w-md p-6 rounded-2xl apple-card-item shadow-apple-lg border border-black/10 dark:border-white/10 text-center space-y-4">
-            <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-xl">
-              
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-md p-6 rounded-xl bg-[#171B22] border border-[#272C36] text-center space-y-4 shadow-popover">
+            <div className="w-12 h-12 mx-auto rounded-xl bg-[#131720] border border-[#272C36] text-[#E5484D] flex items-center justify-center font-bold text-lg">
+              <FolderOpen size={22} strokeWidth={1.5} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
+              <h2 className="text-base font-semibold text-[#F3F4F6]">
                 Benvenuto su NoteRip
               </h2>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Seleziona una cartella sul tuo computer da usare come Vault locale per i tuoi appunti Markdown.
+              <p className="text-xs text-[#9CA3AF] mt-1 leading-relaxed">
+                Personal knowledge management moderno, veloce e locale. Seleziona una cartella per iniziare con i tuoi appunti Markdown.
               </p>
             </div>
 
             <button
               onClick={openVaultDialog}
-              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-medium text-xs shadow-apple-sm transition-all"
+              className="w-full py-2.5 px-4 rounded-xl bg-[#E5484D] hover:bg-[#F05D62] text-white font-medium text-xs transition-all shadow-subtle active:scale-[0.98]"
             >
               Seleziona Cartella Vault
             </button>
@@ -103,7 +113,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Lazy-loaded conditional modals (Zero memory overhead when closed) */}
+      {/* Lazy-loaded conditional modals */}
       <Suspense fallback={null}>
         {isSyncModalOpen && <SyncModal />}
         {isFlashcardModalOpen && <FlashcardModal />}

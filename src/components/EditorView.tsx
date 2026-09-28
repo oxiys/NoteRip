@@ -6,9 +6,6 @@ import { CodeBlockView } from './CodeBlockView';
 import { MermaidRenderer } from './MermaidRenderer';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
-  Check,
-  RotateCw,
-  PanelRight,
   Columns,
   Link2,
   FileCode2,
@@ -35,13 +32,10 @@ import {
   ChevronDown,
   Workflow,
   Cpu,
-  PanelLeftOpen,
   MoveHorizontal,
   Brain,
-  Bot,
   Undo2,
   Redo2,
-  AlertCircle,
   Type,
 } from 'lucide-react';
 
@@ -62,24 +56,16 @@ export const EditorView: React.FC = () => {
     activeNotePath,
     activeNoteContent,
     notes,
-    isDirty,
-    isInspectorOpen,
-    isSidebarOpen,
-    toggleSidebar,
     updateActiveContent,
     navigateToWikiLink,
-    toggleInspector,
     editorWidth,
     setEditorWidth,
     openFlashcardSession,
     flashcards,
-    openSmartQAModal,
     undo,
     redo,
     canUndo,
     canRedo,
-    isSaving,
-    saveError,
     saveActiveNote,
     autoSaveMode,
     setAutoSaveMode,
@@ -1466,23 +1452,15 @@ export const EditorView: React.FC = () => {
 
   if (!activeNote) {
     return (
-      <div className="flex-1 h-full flex flex-col items-center justify-center text-center p-6 text-neutral-400 dark:text-neutral-500 bg-white/40 dark:bg-black/20 relative">
-        {!isSidebarOpen && (
-          <button
-            onClick={toggleSidebar}
-            title="Mostra barra laterale (Esplora File)"
-            className="absolute top-3 left-3 p-1.5 rounded-md border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 text-xs font-medium"
-          >
-            <PanelLeftOpen size={16} />
-            <span>Mostra File</span>
-          </button>
-        )}
-        <FileCode2 size={48} className="stroke-[1.2] mb-3 text-amber-500/40" />
-        <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+      <div className="flex-1 h-full flex flex-col items-center justify-center text-center p-8 bg-[#0E1116] select-none">
+        <div className="w-12 h-12 rounded-xl bg-[#171B22] border border-[#272C36] flex items-center justify-center text-[#6B7280] mb-3">
+          <FileCode2 size={24} strokeWidth={1.5} />
+        </div>
+        <h3 className="text-sm font-semibold text-[#F3F4F6]">
           Nessuna Nota Selezionata
         </h3>
-        <p className="text-xs text-neutral-400 mt-1 max-w-sm">
-          Seleziona un appunto dalla barra laterale o creane uno nuovo per iniziare a scrivere.
+        <p className="text-xs text-[#9CA3AF] mt-1 max-w-sm leading-relaxed">
+          Seleziona un appunto dalla barra laterale o usa Quick Capture in alto per iniziare a scrivere.
         </p>
       </div>
     );
@@ -1491,102 +1469,26 @@ export const EditorView: React.FC = () => {
   let taskItemCounter = 0;
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-[var(--bg-app)] select-text relative">
-      {/* Editor Top Navigation Bar (macOS Sonoma Floating Blur) */}
-      <div className="h-11 px-4 border-b border-[var(--border-subtle)] flex items-center justify-between select-none bg-[var(--bg-app)]/75 backdrop-blur-xl z-20">
-        {/* Breadcrumb & Save Status */}
-        <div className="flex items-center space-x-2 min-w-0">
-          {!isSidebarOpen && (
-            <button
-              onClick={toggleSidebar}
-              title="Mostra barra laterale (Esplora File)"
-              className="p-1.5 -ml-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors mr-1 macos-clickable"
-            >
-              <PanelLeftOpen size={15} />
-            </button>
-          )}
-          <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
-            {activeNote.title}
-          </span>
-          <span className="text-[var(--text-muted)]">/</span>
-          <span className="text-[11px] text-[var(--text-secondary)] truncate">{activeNote.folder}</span>
-
-          <span className="inline-flex items-center ml-2 text-[10px] text-[var(--text-muted)]">
-            {saveError ? (
-              <button
-                onClick={() => saveActiveNote()}
-                className="flex items-center text-rose-500 hover:text-rose-600 dark:text-rose-400 space-x-1 cursor-pointer transition-colors"
-                title={`Errore nel salvataggio: ${saveError}. Clicca per riprovare.`}
-              >
-                <AlertCircle size={11} />
-                <span>Errore salvataggio (riprova)</span>
-              </button>
-            ) : isSaving ? (
-              <span className="flex items-center text-[var(--accent)] space-x-1">
-                <RotateCw size={11} className="animate-spin" />
-                <span>Salvataggio...</span>
-              </span>
-            ) : isDirty ? (
-              <button
-                onClick={() => saveActiveNote()}
-                className="flex items-center text-amber-500 dark:text-amber-400 space-x-1 hover:underline cursor-pointer transition-colors"
-                title="Modifiche non salvate (Premi Ctrl+S o clicca qui per salvare)"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                <span>Modificato (Ctrl+S)</span>
-              </button>
-            ) : (
-              <span className="flex items-center text-emerald-600 dark:text-emerald-400 space-x-1">
-                <Check size={11} />
-                <span>Salvato</span>
-              </span>
-            )}
-          </span>
-
-          {/* Auto-Save Toggle */}
-          <button
-            onClick={() => setAutoSaveMode(autoSaveMode === 'manual' ? '2s' : 'manual')}
-            className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-colors flex items-center space-x-1 border ${
-              autoSaveMode === 'manual'
-                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                : 'bg-black/5 dark:bg-white/5 text-[var(--text-muted)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'
-            }`}
-            title={
-              autoSaveMode === 'manual'
-                ? 'Salvataggio MANUALE (Ctrl+S). Clicca per passare al salvataggio automatico (2s).'
-                : 'Salvataggio AUTOMATICO (2s). Clicca per passare al salvataggio manuale (Ctrl+S).'
-            }
-          >
-            <span>{autoSaveMode === 'manual' ? 'Manuale' : 'Auto 2s'}</span>
-          </button>
-        </div>
-
-        {/* View Mode Controls (Live Preview / Split / Source) & Font & Inspector Toggle */}
-        <div className="flex items-center space-x-1">
-          {/* Typography Font Settings Modal Toggle */}
-          <button
-            onClick={toggleFontModal}
-            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors macos-clickable"
-            title="Personalizza Font & Tipografia (Font di Sistema)"
-          >
-            <Type size={14} />
-          </button>
-          {/* Mode Switcher */}
-          <div className="flex items-center bg-black/10 dark:bg-white/10 p-0.5 rounded-lg border border-[var(--border-subtle)]">
+    <div className="flex-1 h-full flex flex-col bg-[#0E1116] select-text relative">
+      {/* Editor Sub-Toolbar: Mode Switcher, Typography & Width */}
+      <div className="h-10 px-4 border-b border-[#272C36] flex items-center justify-between select-none bg-[#0E1116] z-20 text-xs shrink-0">
+        {/* Left: Mode Switcher (Live / Split / Source) & Typography */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-[#171B22] p-0.5 rounded-xl border border-[#272C36]">
             <button
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setActiveBlockId(null);
                 setMode('live');
               }}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs macos-clickable transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors ${
                 mode === 'live'
-                  ? 'bg-[var(--card-bg)] text-[var(--text-primary)] font-semibold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  ? 'bg-[#131720] text-[#F3F4F6] font-medium border border-[#3A4150]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
-              title="Modalità Live Preview (Stile Obsidian: documento visivo formattato con modifica in-place)"
+              title="Modalità Live Preview"
             >
-              <Sparkles size={13} className={mode === 'live' ? 'text-[var(--accent)]' : ''} />
+              <Sparkles size={13} strokeWidth={1.5} className={mode === 'live' ? 'text-[#E5484D]' : ''} />
               <span>Live Preview</span>
             </button>
             <button
@@ -1595,14 +1497,14 @@ export const EditorView: React.FC = () => {
                 setActiveBlockId(null);
                 setMode('split');
               }}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs macos-clickable transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors ${
                 mode === 'split'
-                  ? 'bg-[var(--card-bg)] text-[var(--text-primary)] font-semibold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  ? 'bg-[#131720] text-[#F3F4F6] font-medium border border-[#3A4150]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
-              title="Modalità Split (Editor a sinistra + Anteprima a destra)"
+              title="Modalità Split (Editor + Anteprima)"
             >
-              <Columns size={13} className={mode === 'split' ? 'text-[var(--accent)]' : ''} />
+              <Columns size={13} strokeWidth={1.5} className={mode === 'split' ? 'text-[#E5484D]' : ''} />
               <span>Split</span>
             </button>
             <button
@@ -1611,172 +1513,137 @@ export const EditorView: React.FC = () => {
                 setActiveBlockId(null);
                 setMode('source');
               }}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs macos-clickable transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors ${
                 mode === 'source'
-                  ? 'bg-[var(--card-bg)] text-[var(--text-primary)] font-semibold shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  ? 'bg-[#131720] text-[#F3F4F6] font-medium border border-[#3A4150]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
-              title="Modalità Codice Sorgente (Markdown puro)"
+              title="Modalità Codice Sorgente"
             >
-              <Code size={13} className={mode === 'source' ? 'text-[var(--accent)]' : ''} />
+              <Code size={13} strokeWidth={1.5} className={mode === 'source' ? 'text-[#E5484D]' : ''} />
               <span>Sorgente</span>
             </button>
           </div>
 
-          <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-1" />
+          {/* Typography Font Settings Modal Toggle */}
+          <button
+            onClick={toggleFontModal}
+            className="p-1.5 rounded-xl border border-[#272C36] bg-[#171B22] text-[#9CA3AF] hover:text-[#F3F4F6] hover:border-[#3A4150] transition-colors"
+            title="Personalizza Font & Tipografia"
+          >
+            <Type size={13} strokeWidth={1.5} />
+          </button>
 
+          {/* Auto-Save Toggle */}
+          <button
+            onClick={() => setAutoSaveMode(autoSaveMode === 'manual' ? '2s' : 'manual')}
+            className={`px-2.5 py-1 rounded-xl text-[11px] font-mono transition-colors border ${
+              autoSaveMode === 'manual'
+                ? 'bg-[#171B22] text-[#E5484D] border-[#E5484D]/40'
+                : 'bg-[#171B22] text-[#9CA3AF] hover:text-[#F3F4F6] border-[#272C36]'
+            }`}
+            title={
+              autoSaveMode === 'manual'
+                ? 'Salvataggio MANUALE (Ctrl+S). Clicca per attivare auto-save (2s).'
+                : 'Salvataggio AUTOMATICO (2s). Clicca per passare al salvataggio manuale.'
+            }
+          >
+            <span>{autoSaveMode === 'manual' ? 'Salva: Manuale' : 'Salva: Auto 2s'}</span>
+          </button>
+        </div>
+
+        {/* Right: Width Selector & Study Note Button */}
+        <div className="flex items-center gap-2">
           {/* Width Control Selector */}
           <div className="relative" ref={widthMenuRef}>
             <button
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setShowWidthMenu(!showWidthMenu)}
-              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs transition-colors ${
-                showWidthMenu
-                  ? 'bg-[var(--accent-subtle)] text-[var(--accent)] font-semibold'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10'
-              }`}
-              title="Regola larghezza area di scrittura (oppure trascina i bordi laterali)"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[#272C36] bg-[#171B22] text-[#9CA3AF] hover:text-[#F3F4F6] hover:border-[#3A4150] transition-colors text-xs"
+              title="Regola larghezza foglio"
             >
-              <MoveHorizontal size={14} />
-              <span className="text-[11px] font-medium hidden sm:inline">
+              <MoveHorizontal size={13} strokeWidth={1.5} />
+              <span className="text-[11px] font-mono hidden sm:inline">
                 {isFullWidth ? '100%' : `${editorWidth}px`}
               </span>
             </button>
 
             {showWidthMenu && (
-              <div className="absolute top-8 right-0 w-64 rounded-2xl apple-card-item shadow-apple-popover p-3 border border-black/10 dark:border-white/15 z-50 space-y-2.5 text-xs">
-                <div className="flex items-center justify-between text-xs font-semibold text-[var(--text-primary)]">
+              <div className="absolute top-9 right-0 w-64 rounded-xl bg-[#171B22] border border-[#272C36] shadow-popover p-3 z-50 space-y-2 text-xs">
+                <div className="flex items-center justify-between font-semibold text-[#F3F4F6]">
                   <span>Larghezza Foglio</span>
-                  <span className="font-mono text-[11px] text-[var(--accent)] font-bold">
-                    {isFullWidth ? '100% (Piena)' : `${editorWidth}px`}
+                  <span className="font-mono text-[#E5484D] text-[11px]">
+                    {isFullWidth ? '100%' : `${editorWidth}px`}
                   </span>
                 </div>
 
-                {/* Slider */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
-                    <span>Compatta (640px)</span>
-                    <span>Ampia (1600px)</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="640"
-                    max="1600"
-                    step="20"
-                    value={editorWidth === -1 ? 1600 : editorWidth}
-                    onChange={(e) => setEditorWidth(Number(e.target.value))}
-                    className="w-full accent-[var(--accent)] cursor-pointer"
-                  />
-                </div>
+                <input
+                  type="range"
+                  min="640"
+                  max="1600"
+                  step="20"
+                  value={editorWidth === -1 ? 1600 : editorWidth}
+                  onChange={(e) => setEditorWidth(Number(e.target.value))}
+                  className="w-full accent-[#E5484D] cursor-pointer"
+                />
 
-                {/* Presets Grid */}
-                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-black/5 dark:border-white/10">
+                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-[#272C36]">
                   <button
                     onClick={() => {
                       setEditorWidth(768);
                       setShowWidthMenu(false);
                     }}
-                    className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                      editorWidth === 768
-                        ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)] font-medium'
-                        : 'border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)]'
-                    }`}
+                    className="p-1.5 rounded-lg border border-[#272C36] hover:border-[#E5484D] text-left text-[11px] text-[#9CA3AF] hover:text-[#F3F4F6]"
                   >
-                    <div className="font-semibold text-[11px]">Compatta</div>
-                    <div className="text-[9px] text-[var(--text-muted)]">768px (Lettura)</div>
+                    Compatta (768px)
                   </button>
-
                   <button
                     onClick={() => {
                       setEditorWidth(960);
                       setShowWidthMenu(false);
                     }}
-                    className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                      editorWidth === 960
-                        ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)] font-medium'
-                        : 'border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)]'
-                    }`}
+                    className="p-1.5 rounded-lg border border-[#272C36] hover:border-[#E5484D] text-left text-[11px] text-[#9CA3AF] hover:text-[#F3F4F6]"
                   >
-                    <div className="font-semibold text-[11px]">Standard</div>
-                    <div className="text-[9px] text-[var(--text-muted)]">960px (Bilanciata)</div>
+                    Standard (960px)
                   </button>
-
                   <button
                     onClick={() => {
                       setEditorWidth(1250);
                       setShowWidthMenu(false);
                     }}
-                    className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                      editorWidth === 1250
-                        ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)] font-medium'
-                        : 'border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)]'
-                    }`}
+                    className="p-1.5 rounded-lg border border-[#272C36] hover:border-[#E5484D] text-left text-[11px] text-[#9CA3AF] hover:text-[#F3F4F6]"
                   >
-                    <div className="font-semibold text-[11px]">Ampia</div>
-                    <div className="text-[9px] text-[var(--text-muted)]">1250px (Desktop)</div>
+                    Ampia (1250px)
                   </button>
-
                   <button
                     onClick={() => {
                       setEditorWidth(-1);
                       setShowWidthMenu(false);
                     }}
-                    className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                      isFullWidth
-                        ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent)] font-medium'
-                        : 'border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)]'
-                    }`}
+                    className="p-1.5 rounded-lg border border-[#272C36] hover:border-[#E5484D] text-left text-[11px] text-[#9CA3AF] hover:text-[#F3F4F6]"
                   >
-                    <div className="font-semibold text-[11px]">100% Piena</div>
-                    <div className="text-[9px] text-[var(--text-muted)]">Tutto lo schermo</div>
+                    100% Piena
                   </button>
-                </div>
-
-                <div className="text-[10px] text-[var(--text-muted)] text-center pt-1 border-t border-black/5 dark:border-white/5">
-                  💡 Puoi anche trascinare i bordi laterali del foglio con il mouse
                 </div>
               </div>
             )}
           </div>
 
-          {/* Smart Q&A & Semantic Search Button */}
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => openSmartQAModal()}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/25 transition-colors shadow-xs"
-            title="Chiedi al Vault: Ricerca Semantica & AI Locale"
-          >
-            <Bot size={13} className="text-purple-500" />
-            <span className="hidden sm:inline">Chiedi al Vault</span>
-          </button>
-
           {/* Flashcard Study Note Button */}
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => openFlashcardSession(null, activeNotePath)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 transition-colors shadow-xs"
-            title={`Avvia sessione Flashcards SM-2 per questa nota (${noteFlashcardsCount} carte)`}
-          >
-            <Brain size={13} className="text-amber-500" />
-            <span className="hidden sm:inline">Ripassa Nota</span>
-            <span className="text-[10px] font-bold px-1 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400">
-              {noteFlashcardsCount}
-            </span>
-          </button>
-
-          {/* Inspector Panel Toggle */}
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={toggleInspector}
-            className={`p-1.5 rounded-md transition-colors ${
-              isInspectorOpen
-                ? 'bg-[var(--accent-subtle)] text-[var(--accent)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10'
-            }`}
-            title="Mostra / Nascondi pannello Backlinks"
-          >
-            <PanelRight size={15} />
-          </button>
+          {noteFlashcardsCount > 0 && (
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => openFlashcardSession(null, activeNotePath)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium text-[#F3F4F6] bg-[#171B22] border border-[#272C36] hover:border-[#E5484D] transition-colors"
+              title={`Ripassa ${noteFlashcardsCount} flashcards collegate a questa nota`}
+            >
+              <Brain size={13} strokeWidth={1.5} className="text-[#E5484D]" />
+              <span className="hidden sm:inline">Ripassa</span>
+              <span className="font-mono text-[10px] text-[#E5484D] font-bold">
+                {noteFlashcardsCount}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -2491,10 +2358,10 @@ classDiagram
       <div className="flex-1 flex overflow-hidden">
         {/* 1. Mode 'live': Obsidian-Style Live Preview with in-place block editing */}
         {mode === 'live' && (
-          <div ref={liveContainerRef} className="w-full h-full flex flex-col overflow-y-auto relative editor-content-area">
+          <div ref={liveContainerRef} className="w-full h-full flex flex-col overflow-y-auto relative editor-content-area bg-[#0E1116]">
             <div
               style={contentContainerStyle}
-              className={`w-full mx-auto px-8 py-7 select-text space-y-2 relative transition-[max-width] ${
+              className={`w-full mx-auto px-10 py-10 md:px-16 md:py-12 select-text space-y-3 relative transition-[max-width] ${
                 isDraggingWidth ? 'duration-0 select-none' : 'duration-150 ease-out'
               }`}
             >
@@ -2506,7 +2373,7 @@ classDiagram
                   className="absolute top-0 bottom-0 -left-3 w-6 cursor-col-resize group flex items-center justify-center select-none z-20"
                   title="Trascina verso sinistra per allargare (Doppio click per 100%)"
                 >
-                  <div className="w-1 h-16 rounded-full bg-black/10 dark:bg-white/10 group-hover:bg-[var(--accent)] group-hover:h-24 transition-all opacity-0 group-hover:opacity-100 shadow-sm" />
+                  <div className="w-1 h-16 rounded-full bg-[#272C36] group-hover:bg-[#E5484D] group-hover:h-24 transition-all opacity-0 group-hover:opacity-100" />
                 </div>
               )}
 
@@ -2518,21 +2385,21 @@ classDiagram
                   className="absolute top-0 bottom-0 -right-3 w-6 cursor-col-resize group flex items-center justify-center select-none z-20"
                   title="Trascina verso destra per allargare (Doppio click per 100%)"
                 >
-                  <div className="w-1 h-16 rounded-full bg-black/10 dark:bg-white/10 group-hover:bg-[var(--accent)] group-hover:h-24 transition-all opacity-0 group-hover:opacity-100 shadow-sm" />
+                  <div className="w-1 h-16 rounded-full bg-[#272C36] group-hover:bg-[#E5484D] group-hover:h-24 transition-all opacity-0 group-hover:opacity-100" />
                 </div>
               )}
 
               {/* Live width feedback badge during drag */}
               {isDraggingWidth && (
-                <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 px-3 py-1 rounded-full bg-[var(--accent)] text-white text-xs font-mono font-medium shadow-apple-md pointer-events-none animate-in fade-in duration-100">
+                <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3 py-1 rounded-xl bg-[#171B22] border border-[#E5484D] text-[#F3F4F6] text-xs font-mono font-medium shadow-popover pointer-events-none animate-in fade-in duration-100">
                   Larghezza: {editorWidth}px
                 </div>
               )}
-              {/* Note Header Title (macOS Sonoma / Bear style) if not starting with an H1 */}
+              {/* Note Header Title if not starting with an H1 */}
               {(parsedBlocks.length === 0 || parsedBlocks[0].type !== 'h1') && (
-                <div className="pt-2 pb-5 border-b border-[var(--border-subtle)] mb-5 select-none">
-                  <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)] font-medium mb-2">
-                    <span className="px-2 py-0.5 rounded-full bg-[var(--surface-secondary)] text-[var(--text-secondary)]">
+                <div className="pt-2 pb-6 border-b border-[#272C36] mb-6 select-none">
+                  <div className="flex items-center gap-2 text-xs text-[#9CA3AF] mb-2 font-mono">
+                    <span className="px-2 py-0.5 rounded-lg bg-[#171B22] border border-[#272C36] text-[#9CA3AF]">
                       {activeNote.folder || 'Vault'}
                     </span>
                     <span>•</span>
@@ -2546,7 +2413,7 @@ classDiagram
                       })}
                     </span>
                   </div>
-                  <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">
+                  <h1 className="text-3xl font-bold tracking-tight text-[#F3F4F6]">
                     {activeNote.title}
                   </h1>
                 </div>
@@ -2560,7 +2427,7 @@ classDiagram
                   return (
                     <div
                       key={block.id}
-                      className="my-2 p-3 rounded-2xl bg-[var(--card-bg)] border border-[var(--accent)]/40 ring-1 ring-[var(--accent)]/20 transition-all shadow-apple-sm"
+                      className="my-2 p-3.5 rounded-xl bg-[#171B22] border border-[#E5484D] transition-all"
                     >
                       <textarea
                         ref={blockInputRef}

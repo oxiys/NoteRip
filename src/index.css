@@ -3,85 +3,64 @@
 @tailwind utilities;
 
 @layer base {
-  /* Catppuccin Mocha - Soothing, Zero-Eye-Strain Dark Palette */
+  /* Crimson Noir - Minimal, Developer-Friendly Dark Theme */
   :root,
-  .theme-mocha,
-  [data-theme="catppuccin-mocha"],
-  .dark:not(.theme-latte) {
-    --bg-app: #1e1e2e;          /* Base */
-    --sidebar-bg: rgba(24, 24, 37, 0.88); /* Mantle */
-    --panel-bg: rgba(30, 30, 46, 0.82);   /* Base vibrant */
-    --card-bg: rgba(49, 50, 68, 0.65);    /* Surface0 */
-    --card-hover: rgba(69, 71, 90, 0.8);  /* Surface1 */
-    --surface-secondary: #313244;
-    --border-subtle: rgba(205, 214, 244, 0.09); /* Text with low opacity */
-    --border-strong: rgba(180, 190, 254, 0.22); /* Lavender border */
-    --text-primary: #cdd6f4;      /* Text */
-    --text-secondary: #a6adc8;    /* Subtext0 */
-    --text-muted: #6c7086;        /* Overlay0 */
-    --accent: #cba6f7;            /* Mauve */
-    --accent-hover: #b4befe;      /* Lavender */
-    --accent-subtle: rgba(203, 166, 247, 0.15);
-    --accent-blue: #89b4fa;       /* Blue */
-    --accent-teal: #94e2d5;       /* Teal */
-    --accent-purple: #f5c2e7;     /* Pink */
-    --accent-green: #a6e3a1;      /* Green */
-    --accent-peach: #fab387;      /* Peach */
-    --scrollbar-thumb: rgba(108, 112, 134, 0.35); /* Overlay0 */
-    --scrollbar-hover: rgba(147, 153, 178, 0.55); /* Overlay2 */
-    --code-bg: #181825;           /* Mantle */
-    --selection-bg: rgba(203, 166, 247, 0.28);
-  }
-
-  /* Catppuccin Latte - Soothing, Eye-Friendly Warm Paper Light */
-  .theme-latte,
-  [data-theme="catppuccin-latte"] {
-    --bg-app: #eff1f5;          /* Base */
-    --sidebar-bg: rgba(230, 233, 239, 0.88); /* Mantle */
-    --panel-bg: rgba(239, 241, 245, 0.85);   /* Base vibrant */
-    --card-bg: rgba(255, 255, 255, 0.75);
-    --card-hover: rgba(255, 255, 255, 0.95);
-    --surface-secondary: #dce0e8;
-    --border-subtle: rgba(76, 79, 105, 0.1);
-    --border-strong: rgba(136, 57, 239, 0.25);
-    --text-primary: #4c4f69;      /* Text */
-    --text-secondary: #6c6f85;    /* Subtext0 */
-    --text-muted: #9ca0b0;        /* Overlay0 */
-    --accent: #8839ef;            /* Mauve */
-    --accent-hover: #7287fd;      /* Lavender */
-    --accent-subtle: rgba(136, 57, 239, 0.12);
-    --accent-blue: #1e66f5;       /* Blue */
-    --accent-teal: #179299;       /* Teal */
-    --accent-purple: #ea76cb;     /* Pink */
-    --scrollbar-thumb: rgba(156, 160, 176, 0.4);
-    --scrollbar-hover: rgba(108, 111, 133, 0.6);
-    --code-bg: #e6e9ef;
-    --selection-bg: rgba(136, 57, 239, 0.2);
+  .theme-crimson-noir,
+  [data-theme="crimson-noir"],
+  .dark {
+    --bg-app: #0E1116;
+    --sidebar-bg: #131720;
+    --panel-bg: #0E1116;
+    --surface-panel: #171B22;
+    --card-bg: #171B22;
+    --card-hover: #1C212B;
+    --surface-secondary: #1F242D;
+    --border-subtle: #272C36;
+    --border-strong: #3A4150;
+    --text-primary: #F3F4F6;
+    --text-secondary: #9CA3AF;
+    --text-muted: #6B7280;
+    --accent: #E5484D;
+    --accent-hover: #F05D62;
+    --accent-subtle: rgba(229, 72, 77, 0.12);
+    --accent-border: rgba(229, 72, 77, 0.35);
+    --accent-blue: #60A5FA;
+    --accent-teal: #2DD4BF;
+    --accent-purple: #C084FC;
+    --accent-green: #4ADE80;
+    --accent-peach: #FB923C;
+    --scrollbar-thumb: #272C36;
+    --scrollbar-hover: #3E4553;
+    --code-bg: #131720;
+    --selection-bg: rgba(229, 72, 77, 0.25);
   }
 
   body {
     @apply antialiased select-none text-sm;
-    background-color: var(--bg-app);
-    color: var(--text-primary);
+    background-color: #0E1116;
+    color: #F3F4F6;
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    transition: background-color 0.18s ease, color 0.18s ease;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 
   .editor-content-area {
     font-family: var(--editor-font-family, inherit);
-    font-size: var(--editor-font-size, 14px);
+    font-size: var(--editor-font-size, 15px);
+    line-height: 1.7;
+    color: #F3F4F6;
   }
 
   ::selection {
     background-color: var(--selection-bg);
+    color: #FFFFFF;
   }
 
-  /* Thin Overlay Scrollbar */
+  /* Thin Minimal Scrollbar */
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
   }
 
   ::-webkit-scrollbar-track {
@@ -100,148 +79,122 @@
 }
 
 @layer components {
-  /* Panel & Card Utility Classes */
-  .apple-vibrant {
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* Crimson Noir Surface Utilities */
+  .crimson-panel {
+    background-color: #131720;
+    border-color: #272C36;
   }
 
+  .crimson-card {
+    background-color: #171B22;
+    border: 1px solid #272C36;
+    border-radius: 12px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .crimson-card:hover {
+    background-color: #1C212B;
+    border-color: #3A4150;
+  }
+
+  /* Backwards compatibility aliases mapped cleanly to Crimson Noir */
+  .apple-vibrant,
   .apple-vibrant-subtle {
-    backdrop-filter: blur(12px) saturate(160%);
-    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .apple-sidebar-panel {
-    background: var(--sidebar-bg);
-    border-color: var(--border-subtle);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background-color: #131720;
+    border-color: #272C36;
   }
 
   .apple-content-panel {
-    background: var(--panel-bg);
-    border-color: var(--border-subtle);
+    background-color: #0E1116;
+    border-color: #272C36;
   }
 
   .apple-card-item {
-    background: var(--card-bg);
-    border: 1px solid var(--border-subtle);
-    border-radius: 14px;
-    transition: all 0.15s ease;
+    background-color: #171B22;
+    border: 1px solid #272C36;
+    border-radius: 12px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
   .apple-card-item:hover {
-    background: var(--card-hover);
-    border-color: var(--border-strong);
+    background-color: #1C212B;
+    border-color: #3A4150;
   }
 
-  /* Clickable Micro-Interaction */
+  /* Clickable Micro-Interactions */
   .macos-clickable {
-    transition: all 140ms ease;
+    transition: transform 120ms ease, opacity 120ms ease;
   }
   .macos-clickable:active {
     transform: scale(0.98);
   }
 
-  /* Active Tree Item */
+  /* Active Tree Item in Crimson Noir */
   .tree-item-active {
-    background-color: var(--accent) !important;
-    color: #FFFFFF !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    background-color: #171B22 !important;
+    color: #F3F4F6 !important;
+    border-left: 2px solid #E5484D !important;
+    border-radius: 6px;
   }
   .tree-item-active svg {
-    color: #FFFFFF !important;
+    color: #E5484D !important;
   }
 
-  /* Shadow utilities used in components */
-  .shadow-apple-sm { box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
-  .shadow-apple-md { box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
-  .shadow-apple-lg { box-shadow: 0 8px 30px rgba(0,0,0,0.22); }
-  .shadow-apple-popover { box-shadow: 0 8px 32px rgba(0,0,0,0.28); }
-
-  /* WikiLink Badges tailored per theme */
+  /* Clean WikiLink Badges */
   .wikilink-badge {
-    @apply inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-medium cursor-pointer transition-all duration-150;
-    background-color: var(--accent-subtle);
-    color: var(--accent);
-    border: 1px solid rgba(203, 166, 247, 0.25);
+    @apply inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-medium cursor-pointer transition-all duration-150;
+    background-color: #171B22;
+    color: #F3F4F6;
+    border: 1px solid #272C36;
   }
 
-  .theme-mocha .wikilink-badge,
-  [data-theme="catppuccin-mocha"] .wikilink-badge {
-    background-color: rgba(203, 166, 247, 0.14);
-    color: #cba6f7;
-    border: 1px solid rgba(203, 166, 247, 0.28);
+  .wikilink-badge:hover {
+    background-color: #1C212B;
+    border-color: #E5484D;
+    color: #E5484D;
   }
 
-  .theme-mocha .wikilink-badge:hover,
-  [data-theme="catppuccin-mocha"] .wikilink-badge:hover {
-    background-color: rgba(203, 166, 247, 0.24);
-    border-color: rgba(203, 166, 247, 0.45);
-    box-shadow: 0 0 10px rgba(203, 166, 247, 0.2);
-    transform: translateY(-0.5px);
-  }
-
-  .theme-latte .wikilink-badge,
-  [data-theme="catppuccin-latte"] .wikilink-badge {
-    background-color: rgba(136, 57, 239, 0.12);
-    color: #8839ef;
-    border: 1px solid rgba(136, 57, 239, 0.25);
-  }
-
-  .theme-latte .wikilink-badge:hover,
-  [data-theme="catppuccin-latte"] .wikilink-badge:hover {
-    background-color: rgba(136, 57, 239, 0.2);
-    transform: translateY(-0.5px);
-  }
-
-  /* KaTeX Theme Adaptations */
+  /* KaTeX Math Formatting */
   .katex-display {
-    margin: 0.5em 0 !important;
+    margin: 0.75em 0 !important;
   }
 
-  .theme-mocha .katex,
-  [data-theme="catppuccin-mocha"] .katex {
-    color: #cdd6f4;
+  .katex {
+    color: #F3F4F6;
   }
-  .theme-mocha .katex .mord,
-  .theme-mocha .katex .mbin,
-  .theme-mocha .katex .mrel,
-  [data-theme="catppuccin-mocha"] .katex .mord,
-  [data-theme="catppuccin-mocha"] .katex .mbin,
-  [data-theme="catppuccin-mocha"] .katex .mrel {
-    color: #cdd6f4;
+  .katex .mord,
+  .katex .mbin,
+  .katex .mrel {
+    color: #F3F4F6;
   }
-  .theme-mocha .katex .accent,
-  .theme-mocha .katex .sqrt,
-  [data-theme="catppuccin-mocha"] .katex .accent,
-  [data-theme="catppuccin-mocha"] .katex .sqrt {
-    color: #b4befe;
+  .katex .accent,
+  .katex .sqrt {
+    color: #E5484D;
   }
 
-  /* Prism Syntax Highlighting */
+  /* Syntax Highlighting for Code Blocks in Crimson Noir */
   code[class*="language-"],
   pre[class*="language-"] {
-    color: #cdd6f4;
+    color: #F3F4F6;
     text-shadow: none;
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-family: "JetBrains Mono", SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
   }
 
-  /* Catppuccin Mocha Prism Highlighting */
-  .theme-mocha .token.comment { color: #6c7086; font-style: italic; }
-  .theme-mocha .token.punctuation { color: #9399b2; }
-  .theme-mocha .token.number { color: #fab387; }
-  .theme-mocha .token.string { color: #a6e3a1; }
-  .theme-mocha .token.keyword { color: #cba6f7; font-weight: 600; }
-  .theme-mocha .token.function { color: #89b4fa; }
-  .theme-mocha .token.class-name { color: #f9e2af; }
-
-  /* Catppuccin Latte Prism Highlighting */
-  .theme-latte .token.comment { color: #9ca0b0; font-style: italic; }
-  .theme-latte .token.punctuation { color: #6c6f85; }
-  .theme-latte .token.number { color: #fe640b; }
-  .theme-latte .token.string { color: #40a02b; }
-  .theme-latte .token.keyword { color: #8839ef; font-weight: 600; }
-  .theme-latte .token.function { color: #1e66f5; }
-  .theme-latte .token.class-name { color: #df8e1d; }
+  .token.comment { color: #6B7280; font-style: italic; }
+  .token.punctuation { color: #9CA3AF; }
+  .token.number { color: #FB923C; }
+  .token.string { color: #4ADE80; }
+  .token.keyword { color: #E5484D; font-weight: 600; }
+  .token.function { color: #60A5FA; }
+  .token.class-name { color: #FCD34D; }
+  .token.operator { color: #E5484D; }
+  .token.boolean { color: #FB923C; }
+  .token.property { color: #9CA3AF; }
 }

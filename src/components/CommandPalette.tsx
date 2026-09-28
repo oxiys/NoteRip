@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useVaultStore } from '../store/useVaultStore';
-import type { AppTheme } from '../store/useVaultStore';
 import {
   Search,
   FileText,
@@ -11,7 +10,6 @@ import {
   Cloud,
   PanelLeft,
   PanelRight,
-  Palette,
   MoveHorizontal,
   Table,
   Sigma,
@@ -322,28 +320,6 @@ export const CommandPalette: React.FC = () => {
         icon: <Folder size={16} className="text-amber-600" />,
         action: () => openVaultDialog(),
         keywords: ['apri vault', 'cambia vault', 'cartella', 'disco'],
-      },
-
-      // Temi
-      {
-        id: 'cmd-theme-catppuccin-mocha',
-        category: 'Comandi',
-        title: 'Tema: Catppuccin Mocha (Eye Comfort Dark)',
-        subtitle: 'Palette scura calibrata contro l\'affaticamento visivo',
-        badge: 'Tema',
-        icon: <Palette size={16} className="text-purple-400" />,
-        action: () => setTheme('catppuccin-mocha' as AppTheme),
-        keywords: ['tema', 'theme', 'dark', 'scuro', 'catppuccin', 'mocha'],
-      },
-      {
-        id: 'cmd-theme-catppuccin-latte',
-        category: 'Comandi',
-        title: 'Tema: Catppuccin Latte (Eye Comfort Light)',
-        subtitle: 'Palette chiara morbida senza contrasti accecanti',
-        badge: 'Tema',
-        icon: <Palette size={16} className="text-amber-600" />,
-        action: () => setTheme('catppuccin-latte' as AppTheme),
-        keywords: ['tema', 'theme', 'light', 'chiaro', 'catppuccin', 'latte'],
       },
 
 
@@ -759,11 +735,11 @@ public record Studente(int matricola, String nome, String corso) {
   return (
     <div
       onClick={closeCommandPalette}
-      className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-black/50 backdrop-blur-xl animate-in fade-in duration-150 select-none"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-black/60 select-none animate-in fade-in duration-150"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-2xl apple-card-item shadow-apple-popover border border-[var(--border-subtle)] overflow-hidden flex flex-col bg-[var(--card-bg)] text-[var(--text-primary)] transition-all animate-in zoom-in-95 duration-150"
+        className="w-full max-w-2xl rounded-xl bg-[#171B22] border border-[#272C36] shadow-popover overflow-hidden flex flex-col text-[#F3F4F6] transition-all animate-in zoom-in-95 duration-150"
       >
         {/* Search Bar Input */}
         <div className="flex items-center px-4 py-3.5 border-b border-[var(--border-subtle)] gap-3">
@@ -792,15 +768,15 @@ public record Studente(int matricola, String nome, String corso) {
           )}
         </div>
 
-        {/* Category Tabs & Search Depth Filter Bar (Item 11 & Item 4) */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02] text-xs">
+        {/* Category Tabs & Search Depth Filter Bar */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#272C36] bg-[#131720] text-xs">
           <div className="flex items-center space-x-1 overflow-x-auto py-0.5">
             <button
               onClick={() => setActiveTab('all')}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                 activeTab === 'all'
-                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+                  ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
             >
               Tutti
@@ -809,12 +785,12 @@ public record Studente(int matricola, String nome, String corso) {
               onClick={() => setActiveTab('Note')}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1 ${
                 activeTab === 'Note'
-                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+                  ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
             >
               <span>Note</span>
-              <span className="text-[10px] opacity-75">
+              <span className="text-[10px] text-[#6B7280]">
                 ({notes.filter((n) => !searchLimitDepth1 || n.folderDepth === undefined || n.folderDepth <= 1).length})
               </span>
             </button>
@@ -822,8 +798,8 @@ public record Studente(int matricola, String nome, String corso) {
               onClick={() => setActiveTab('Comandi')}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                 activeTab === 'Comandi'
-                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+                  ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
             >
               Comandi ({commandsList.length})
@@ -832,8 +808,8 @@ public record Studente(int matricola, String nome, String corso) {
               onClick={() => setActiveTab('Cartelle')}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                 activeTab === 'Cartelle'
-                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+                  ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
             >
               Cartelle ({vaultFolders.length})
@@ -842,21 +818,21 @@ public record Studente(int matricola, String nome, String corso) {
               onClick={() => setActiveTab('Tag')}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                 activeTab === 'Tag'
-                  ? 'bg-[var(--accent)] text-white shadow-2xs font-semibold'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+                  ? 'bg-[#171B22] text-[#F3F4F6] border border-[#272C36]'
+                  : 'text-[#9CA3AF] hover:text-[#F3F4F6]'
               }`}
             >
               Tag ({vaultTags.length})
             </button>
           </div>
 
-          {/* Search Depth Filter Toggle Button (Item 4) */}
+          {/* Search Depth Filter Toggle Button */}
           <button
             onClick={() => setSearchLimitDepth1(!searchLimitDepth1)}
             className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg border text-[11px] transition-colors shrink-0 ${
               searchLimitDepth1
-                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25 font-semibold'
-                : 'bg-black/5 dark:bg-white/5 text-[var(--text-muted)] border-black/5 dark:border-white/10 hover:text-[var(--text-primary)]'
+                ? 'bg-[#171B22] text-[#E5484D] border-[#E5484D]/40 font-semibold'
+                : 'bg-[#171B22] text-[#9CA3AF] border-[#272C36] hover:text-[#F3F4F6]'
             }`}
             title={
               searchLimitDepth1
@@ -895,16 +871,16 @@ public record Studente(int matricola, String nome, String corso) {
                   onMouseEnter={() => setSelectedIndex(index)}
                   className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-all ${
                     isSelected
-                      ? 'bg-[var(--accent)] text-white shadow-xs'
-                      : 'hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-primary)]'
+                      ? 'bg-[#1C212B] border-l-2 border-[#E5484D] text-[#F3F4F6]'
+                      : 'hover:bg-[#1C212B]/60 text-[#9CA3AF] hover:text-[#F3F4F6]'
                   }`}
                 >
                   <div className="flex items-center space-x-3 min-w-0 flex-1">
                     <div
                       className={`p-1.5 rounded-lg shrink-0 ${
                         isSelected
-                          ? 'bg-white/20 text-white'
-                          : 'bg-black/5 dark:bg-white/5 text-[var(--text-secondary)]'
+                          ? 'bg-[#131720] text-[#E5484D]'
+                          : 'bg-[#131720] text-[#9CA3AF]'
                       }`}
                     >
                       {item.icon}

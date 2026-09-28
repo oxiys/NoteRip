@@ -7,12 +7,13 @@ import {
   Clock,
   FileText,
   ChevronRight,
-  ChevronLeft,
-  Link2,
+  X,
+  BookOpen,
+  Folder,
 } from 'lucide-react';
 
 export const InspectorPanel: React.FC = () => {
-  const { notes, activeNotePath, isInspectorOpen, toggleInspector, navigateToWikiLink } =
+  const { notes, activeNotePath, isInspectorOpen, toggleInspector, navigateToWikiLink, setSelectedTag } =
     useVaultStore();
 
   const currentNote = React.useMemo(() => {
@@ -22,8 +23,27 @@ export const InspectorPanel: React.FC = () => {
     return notes.find((n) => norm(n.path) === normalizedActive) || null;
   }, [notes, activeNotePath]);
 
-  if (!currentNote) {
+  if (!isInspectorOpen) {
     return null;
+  }
+
+  if (!currentNote) {
+    return (
+      <aside className="w-72 md:w-80 h-full bg-[#131720] border-l border-[#272C36] flex flex-col shrink-0 select-none p-4 text-xs text-[#9CA3AF]">
+        <div className="flex items-center justify-between pb-3 border-b border-[#272C36]">
+          <span className="font-semibold text-[#F3F4F6]">Proprietà</span>
+          <button
+            onClick={toggleInspector}
+            className="p-1 rounded-lg hover:bg-[#171B22] hover:text-[#F3F4F6] text-[#6B7280] transition-colors"
+          >
+            <X size={14} strokeWidth={1.5} />
+          </button>
+        </div>
+        <div className="py-8 text-center text-[#6B7280]">
+          Seleziona una nota per visualizzarne proprietà, backlinks e metadati.
+        </div>
+      </aside>
+    );
   }
 
   const backlinks = currentNote.backlinks || [];
@@ -32,170 +52,175 @@ export const InspectorPanel: React.FC = () => {
   const noteContent = currentNote.content || '';
   const wordCount = noteContent.trim() ? noteContent.trim().split(/\s+/).length : 0;
   const charCount = noteContent.length;
+  const readingTimeMin = Math.max(1, Math.ceil(wordCount / 200));
 
   return (
-    <>
-      {/* Floating Trigger Pill (Visible when panel is compressed towards the right) */}
-      {!isInspectorOpen && (
+    <aside className="w-72 md:w-80 h-full bg-[#131720] border-l border-[#272C36] flex flex-col shrink-0 select-none overflow-hidden transition-all duration-200">
+      {/* Header */}
+      <div className="h-14 px-4 border-b border-[#272C36] flex items-center justify-between shrink-0 bg-[#0E1116]">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-[#F3F4F6]">Proprietà Nota</span>
+          <span className="text-[10px] font-mono text-[#9CA3AF] px-1.5 py-0.5 rounded-md bg-[#171B22] border border-[#272C36]">
+            {wordCount} parole
+          </span>
+        </div>
+
         <button
           onClick={toggleInspector}
-          className="absolute bottom-4 right-4 z-30 flex items-center space-x-2 px-3 py-1.5 rounded-full backdrop-blur-xl bg-[var(--panel-bg)]/90 border border-[var(--border-subtle)] shadow-apple-md hover:shadow-apple-lg text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/50 transition-all duration-300 ease-out group hover:scale-[1.03] active:scale-[0.98] macos-clickable"
-          title="Espandi Connessioni & Info (Backlinks)"
+          className="p-1.5 rounded-lg border border-transparent hover:border-[#272C36] hover:bg-[#171B22] text-[#9CA3AF] hover:text-[#F3F4F6] transition-colors"
+          title="Chiudi pannello proprietà"
         >
-          <div className="flex items-center space-x-1.5 text-[var(--accent)]">
-            <Link2 size={13} />
-            <span className="font-semibold text-[11px]">{backlinks.length}</span>
-          </div>
-          <span className="w-px h-3 bg-[var(--border-subtle)]" />
-          <span className="text-[11px]">Connessioni</span>
-          <ChevronLeft
-            size={13}
-            className="text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-transform group-hover:-translate-x-0.5"
-          />
+          <X size={15} strokeWidth={1.5} />
         </button>
-      )}
+      </div>
 
-      {/* Floating Card Inspector (Compresses smoothly towards the right edge of the screen) */}
-      <div
-        className={`absolute bottom-4 right-4 z-40 w-80 h-[460px] max-h-[calc(100vh-100px)] flex flex-col rounded-2xl apple-card-item backdrop-blur-2xl bg-[var(--card-bg)]/95 border border-[var(--border-subtle)] shadow-apple-popover select-none overflow-hidden transition-all duration-300 cubic-bezier(0.16, 1, 0.3, 1) ${
-          isInspectorOpen
-            ? 'translate-x-0 opacity-100 scale-100 pointer-events-auto'
-            : 'translate-x-[calc(100%+24px)] opacity-0 scale-95 pointer-events-none'
-        }`}
-      >
-        {/* Floating Card Header */}
-        <div className="px-3.5 py-2.5 border-b border-[var(--border-subtle)] flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.02]">
-          <div className="flex items-center space-x-2">
-            <h3 className="text-xs font-semibold text-[var(--text-primary)]">
-              Connessioni & Info
-            </h3>
-            <span className="text-[10px] text-[var(--text-muted)] px-1.5 py-0.5 rounded-full bg-[var(--surface-secondary)] font-mono">
-              {wordCount} parole
-            </span>
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {/* Metadata Properties */}
+        <div className="space-y-2.5">
+          <div className="text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
+            Metadati
           </div>
 
-          {/* Compress / Hide button towards the right */}
-          <button
-            onClick={toggleInspector}
-            className="flex items-center space-x-1 p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors group text-[11px]"
-            title="Comprimi verso destra"
-          >
-            <span className="text-[10px] text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity">
-              Comprimi
-            </span>
-            <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform" />
-          </button>
+          <div className="bg-[#171B22] border border-[#272C36] rounded-xl p-3 space-y-2 text-xs">
+            <div className="flex items-center justify-between text-[#9CA3AF]">
+              <span className="flex items-center gap-1.5">
+                <Clock size={13} strokeWidth={1.5} className="text-[#6B7280]" />
+                <span>Modificata</span>
+              </span>
+              <span className="font-mono text-[#F3F4F6] text-[11px]">
+                {new Date(currentNote.updated_at * 1000).toLocaleString('it-IT', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-[#9CA3AF]">
+              <span className="flex items-center gap-1.5">
+                <BookOpen size={13} strokeWidth={1.5} className="text-[#6B7280]" />
+                <span>Tempo lettura</span>
+              </span>
+              <span className="font-mono text-[#F3F4F6] text-[11px]">~{readingTimeMin} min</span>
+            </div>
+
+            <div className="flex items-center justify-between text-[#9CA3AF]">
+              <span className="flex items-center gap-1.5">
+                <FileText size={13} strokeWidth={1.5} className="text-[#6B7280]" />
+                <span>Caratteri</span>
+              </span>
+              <span className="font-mono text-[#F3F4F6] text-[11px]">{charCount}</span>
+            </div>
+
+            <div className="flex items-center justify-between text-[#9CA3AF] pt-1 border-t border-[#272C36]">
+              <span className="flex items-center gap-1.5">
+                <Folder size={13} strokeWidth={1.5} className="text-[#6B7280]" />
+                <span>Cartella</span>
+              </span>
+              <span className="font-mono text-[#F3F4F6] text-[11px] truncate max-w-[140px]" title={currentNote.folder}>
+                {currentNote.folder || 'Vault Root'}
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
-          {/* Backlinks Section */}
-          <div>
-            <div className="flex items-center space-x-1.5 text-xs font-semibold text-[var(--accent-blue)] mb-2">
-              <ArrowDownLeft size={14} />
-              <span>Backlinks ({backlinks.length})</span>
-            </div>
-
-            {backlinks.length === 0 ? (
-              <p className="text-[11px] text-[var(--text-muted)] italic p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
-                Nessun'altra nota collega questo appunto. Usa <span className="font-mono text-[var(--accent)]">[[{currentNote.title}]]</span> altrove per collegarlo.
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {backlinks.map((target) => (
-                  <button
-                    key={target}
-                    onClick={() => navigateToWikiLink(target)}
-                    className="w-full flex items-center justify-between p-2 rounded-xl text-left text-xs bg-black/5 dark:bg-white/5 hover:bg-[var(--accent-subtle)] text-[var(--text-primary)] transition-colors group"
-                  >
-                    <div className="flex items-center space-x-1.5 truncate">
-                      <FileText size={13} className="text-[var(--accent-blue)] shrink-0" />
-                      <span className="truncate font-medium">{target}</span>
-                    </div>
-                    <ChevronRight size={12} className="text-[var(--text-muted)] group-hover:text-[var(--accent)] shrink-0" />
-                  </button>
-                ))}
-              </div>
-            )}
+        {/* Tags Section */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
+            <span className="flex items-center gap-1">
+              <Hash size={12} strokeWidth={1.5} />
+              <span>Tag ({tags.length})</span>
+            </span>
           </div>
 
-          {/* Outlinks Section */}
-          <div>
-            <div className="flex items-center space-x-1.5 text-xs font-semibold text-[var(--accent)] mb-2">
-              <ArrowUpRight size={14} />
-              <span>Collegamenti Uscenti ({outlinks.length})</span>
+          {tags.length === 0 ? (
+            <div className="bg-[#171B22] border border-[#272C36] rounded-xl p-3 text-xs text-[#6B7280] italic">
+              Nessun tag inserito. Digita <span className="font-mono text-[#E5484D]">#nome_tag</span> nella nota.
             </div>
-
-            {outlinks.length === 0 ? (
-              <p className="text-[11px] text-[var(--text-muted)] italic p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
-                Nessun link <span className="font-mono text-[var(--accent)]">[[WikiLink]]</span> presente in questa nota.
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {outlinks.map((link) => (
-                  <button
-                    key={link}
-                    onClick={() => navigateToWikiLink(link)}
-                    className="w-full flex items-center justify-between p-2 rounded-xl text-left text-xs bg-black/5 dark:bg-white/5 hover:bg-[var(--accent-subtle)] text-[var(--text-primary)] transition-colors group"
-                  >
-                    <div className="flex items-center space-x-1.5 truncate">
-                      <span className="text-[var(--accent)] font-mono text-[11px]">[[</span>
-                      <span className="truncate font-medium">{link}</span>
-                      <span className="text-[var(--accent)] font-mono text-[11px]">]]</span>
-                    </div>
-                    <ChevronRight size={12} className="text-[var(--text-muted)] group-hover:text-[var(--accent)] shrink-0" />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Tags Section */}
-          {tags.length > 0 && (
-            <div>
-              <div className="flex items-center space-x-1.5 text-xs font-semibold text-[var(--text-primary)] mb-2">
-                <Hash size={14} className="text-[var(--accent)]" />
-                <span>Tag</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2 py-0.5 rounded-full text-[11px] bg-black/5 dark:bg-white/10 text-[var(--text-secondary)] font-mono font-medium"
-                  >
-                    #{tag}
-                  </span>
-                ))}
-              </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {tags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setSelectedTag(tag)}
+                  className="px-2.5 py-1 rounded-xl bg-[#171B22] hover:bg-[#1C212B] border border-[#272C36] hover:border-[#E5484D] text-[#9CA3AF] hover:text-[#F3F4F6] text-xs font-mono transition-colors flex items-center gap-1 group"
+                  title={`Filtra note con #${tag}`}
+                >
+                  <span className="text-[#E5484D]">#</span>
+                  <span>{tag}</span>
+                </button>
+              ))}
             </div>
           )}
+        </div>
 
-          {/* Note Metrics & Metadata */}
-          <div className="pt-3 border-t border-black/5 dark:border-white/10 space-y-1.5 text-[11px] text-[var(--text-muted)]">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center space-x-1">
-                <Clock size={12} />
-                <span>Ultima modifica:</span>
-              </span>
-              <span className="font-mono text-[var(--text-secondary)]">
-                {new Date(currentNote.updated_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span>Caratteri:</span>
-              <span className="font-mono text-[var(--text-secondary)]">{charCount}</span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span>Percorso:</span>
-              <span className="font-mono text-[var(--text-secondary)] truncate max-w-[140px]" title={currentNote.rel_path}>
-                {currentNote.rel_path}
-              </span>
-            </div>
+        {/* Backlinks Section */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
+            <span className="flex items-center gap-1">
+              <ArrowDownLeft size={12} strokeWidth={1.5} />
+              <span>Backlinks ({backlinks.length})</span>
+            </span>
           </div>
+
+          {backlinks.length === 0 ? (
+            <div className="bg-[#171B22] border border-[#272C36] rounded-xl p-3 text-xs text-[#6B7280] italic">
+              Nessun'altra nota fa riferimento a questo appunto. Usa <span className="font-mono text-[#E5484D]">[[{currentNote.title}]]</span> altrove per collegarlo.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {backlinks.map((target) => (
+                <button
+                  key={target}
+                  onClick={() => navigateToWikiLink(target)}
+                  className="w-full flex items-center justify-between p-2 rounded-xl text-left text-xs bg-[#171B22] hover:bg-[#1C212B] border border-[#272C36] hover:border-[#3A4150] text-[#F3F4F6] transition-colors group"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <FileText size={13} strokeWidth={1.5} className="text-[#9CA3AF] group-hover:text-[#E5484D] shrink-0" />
+                    <span className="truncate font-medium">{target}</span>
+                  </div>
+                  <ChevronRight size={13} strokeWidth={1.5} className="text-[#6B7280] group-hover:text-[#F3F4F6] shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Outlinks Section */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
+            <span className="flex items-center gap-1">
+              <ArrowUpRight size={12} strokeWidth={1.5} />
+              <span>Collegamenti Uscenti ({outlinks.length})</span>
+            </span>
+          </div>
+
+          {outlinks.length === 0 ? (
+            <div className="bg-[#171B22] border border-[#272C36] rounded-xl p-3 text-xs text-[#6B7280] italic">
+              Nessun collegamento <span className="font-mono text-[#E5484D]">[[WikiLink]]</span> presente.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {outlinks.map((link) => (
+                <button
+                  key={link}
+                  onClick={() => navigateToWikiLink(link)}
+                  className="w-full flex items-center justify-between p-2 rounded-xl text-left text-xs bg-[#171B22] hover:bg-[#1C212B] border border-[#272C36] hover:border-[#3A4150] text-[#F3F4F6] transition-colors group"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="text-[#E5484D] font-mono text-[11px]">[[</span>
+                    <span className="truncate font-medium">{link}</span>
+                    <span className="text-[#E5484D] font-mono text-[11px]">]]</span>
+                  </div>
+                  <ChevronRight size={13} strokeWidth={1.5} className="text-[#6B7280] group-hover:text-[#F3F4F6] shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-    </>
+    </aside>
   );
 };
