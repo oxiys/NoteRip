@@ -4,6 +4,7 @@ import { DataviewRenderer } from './DataviewRenderer';
 import { renderLatexSafe } from '../services/latexSanitizer';
 import { CodeBlockView } from './CodeBlockView';
 import { MermaidRenderer } from './MermaidRenderer';
+import { CircuitRenderer } from './CircuitRenderer';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
   Columns,
@@ -32,6 +33,7 @@ import {
   ChevronDown,
   Workflow,
   Cpu,
+  CircuitBoard,
   MoveHorizontal,
   Brain,
   Undo2,
@@ -89,13 +91,15 @@ export const EditorView: React.FC = () => {
   const liveContainerRef = useRef<HTMLDivElement>(null);
   const blockInputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Dropdown menus for Mermaid Diagrams, C/Java Snippets, Width Control and Flashcards
+  // Dropdown menus for Mermaid Diagrams, C/Java Snippets, Circuits, Width Control and Flashcards
   const [showDiagramMenu, setShowDiagramMenu] = useState(false);
   const [showCodeSnippetMenu, setShowCodeSnippetMenu] = useState(false);
+  const [showCircuitMenu, setShowCircuitMenu] = useState(false);
   const [showWidthMenu, setShowWidthMenu] = useState(false);
   const [showFlashcardMenu, setShowFlashcardMenu] = useState(false);
   const diagramMenuRef = useRef<HTMLDivElement>(null);
   const codeSnippetMenuRef = useRef<HTMLDivElement>(null);
+  const circuitMenuRef = useRef<HTMLDivElement>(null);
   const widthMenuRef = useRef<HTMLDivElement>(null);
   const flashcardMenuRef = useRef<HTMLDivElement>(null);
 
@@ -142,6 +146,9 @@ export const EditorView: React.FC = () => {
       if (codeSnippetMenuRef.current && !codeSnippetMenuRef.current.contains(e.target as Node)) {
         setShowCodeSnippetMenu(false);
       }
+      if (circuitMenuRef.current && !circuitMenuRef.current.contains(e.target as Node)) {
+        setShowCircuitMenu(false);
+      }
       if (widthMenuRef.current && !widthMenuRef.current.contains(e.target as Node)) {
         setShowWidthMenu(false);
       }
@@ -157,6 +164,7 @@ export const EditorView: React.FC = () => {
     applyFormat(`\n${snippet.trim()}\n`, '', '');
     setShowDiagramMenu(false);
     setShowCodeSnippetMenu(false);
+    setShowCircuitMenu(false);
   };
 
   const activeNote = React.useMemo(() => {
@@ -2029,6 +2037,159 @@ stateDiagram-v2
           )}
         </div>
 
+        {/* Circuiti & Architettura Dropdown */}
+        <div className="relative" ref={circuitMenuRef}>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setShowCircuitMenu(!showCircuitMenu);
+              setShowDiagramMenu(false);
+              setShowCodeSnippetMenu(false);
+            }}
+            className={`flex items-center space-x-1 px-2 py-1 rounded font-medium transition-colors ${
+              showCircuitMenu
+                ? 'bg-emerald-500/20 text-emerald-400'
+                : 'hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+            }`}
+            title="Inserisci Circuiti Logici, Datapath Architettura e Diagrammi Temporali"
+          >
+            <CircuitBoard size={14} />
+            <span>Circuiti</span>
+            <ChevronDown size={11} className="opacity-70" />
+          </button>
+
+          {showCircuitMenu && (
+            <div className="absolute top-7 left-0 w-80 rounded-2xl apple-card-item shadow-apple-popover p-2.5 border border-black/10 dark:border-white/15 z-50 space-y-1.5 text-xs max-h-96 overflow-y-auto">
+              <div className="px-2 py-0.5 text-[10px] font-bold text-emerald-500 uppercase tracking-wider">
+                Circuiti Logici & Architettura
+              </div>
+
+              <button
+                onClick={() =>
+                  insertSnippet(`\`\`\`circuit
+# Sommatore Completo (Full Adder a 1-Bit)
+IN A = 1, B = 0, Cin = 1
+
+XOR xor1 = A, B
+XOR Sum = xor1, Cin
+
+AND and1 = A, B
+AND and2 = xor1, Cin
+OR Cout = and1, and2
+
+OUT Sum, Cout
+\`\`\``)
+                }
+                className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
+              >
+                <span className="font-semibold text-[var(--text-primary)]">Full Adder (Sommatore con Carry)</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Circuiti con ingressi interattivi e tabella di verità</span>
+              </button>
+
+              <button
+                onClick={() =>
+                  insertSnippet(`\`\`\`circuit
+# Multiplexer 2-a-1
+IN D0 = 1, D1 = 0, SEL = 0
+
+NOT not_sel = SEL
+AND path0 = D0, not_sel
+AND path1 = D1, SEL
+OR Out = path0, path1
+
+OUT Out
+\`\`\``)
+                }
+                className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
+              >
+                <span className="font-semibold text-[var(--text-primary)]">Multiplexer 2:1 (MUX)</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Selezione di canale con porte logiche</span>
+              </button>
+
+              <button
+                onClick={() =>
+                  insertSnippet(`\`\`\`circuit
+# Porte Logiche Fondamentali
+IN A = 1, B = 0
+
+AND and_gate = A, B
+OR or_gate = A, B
+XOR xor_gate = A, B
+NAND nand_gate = A, B
+NOR nor_gate = A, B
+NOT not_a = A
+
+OUT and_gate, or_gate, xor_gate, nand_gate, nor_gate, not_a
+\`\`\``)
+                }
+                className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
+              >
+                <span className="font-semibold text-[var(--text-primary)]">Porte Logiche di Base</span>
+                <span className="text-[10px] text-[var(--text-muted)]">AND, OR, NOT, XOR, NAND, NOR</span>
+              </button>
+
+              <button
+                onClick={() =>
+                  insertSnippet(`\`\`\`circuit
+# Schema Datapath CPU (Fetch - Decode - Execute)
+IN CLK = 1, RST = 0
+
+REG PC [Program Counter 32b] [CLK: CLK, RST: RST] -> [OUT: pc_out]
+BLOCK IMEM [Instruction Memory] [A: pc_out] -> [INSTR: instr]
+REG RF [Register File] [CLK: CLK, RA: instr] -> [RD1: op_a, RD2: op_b]
+ALU ALU [Arithmetic Logic Unit] [A: op_a, B: op_b] -> [RES: alu_res, ZERO: z_flag]
+BLOCK DMEM [Data Memory] [ADDR: alu_res, CLK: CLK] -> [DATA: d_out]
+
+OUT alu_res, z_flag, d_out
+\`\`\``)
+                }
+                className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
+              >
+                <span className="font-semibold text-[var(--text-primary)]">CPU Datapath & Moduli Architettura</span>
+                <span className="text-[10px] text-[var(--text-muted)]">PC, Register File, ALU, Memorie a blocchi</span>
+              </button>
+
+              <button
+                onClick={() =>
+                  insertSnippet(`\`\`\`circuit
+# Flip-Flop D & Registro
+IN Data = 1, Clock = 1
+
+D_FF FF0 [Flip-Flop D] [D: Data, CLK: Clock] -> [Q: q0]
+OUT q0
+\`\`\``)
+                }
+                className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
+              >
+                <span className="font-semibold text-[var(--text-primary)]">Flip-Flop D & Registri</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Elementi di memoria sequenziale</span>
+              </button>
+
+              <div className="px-2 pt-1.5 py-0.5 text-[10px] font-bold text-sky-500 uppercase tracking-wider">
+                Diagrammi Temporali (Waveform)
+              </div>
+
+              <button
+                onClick={() =>
+                  insertSnippet(`\`\`\`timing
+# Diagramma Temporale Segnali Bus & CPU
+CLK   : _~_~_~_~_~_~
+RESET : ~~__________
+WE    : ____~~~~____
+ADDR  : ===XXXX=====
+DATA  : ===XXXX=====
+READY : ________~~__
+\`\`\``)
+                }
+                className="w-full text-left p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex flex-col transition-colors"
+              >
+                <span className="font-semibold text-[var(--text-primary)]">Diagramma Temporale di Clock (Waveform)</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Onde di clock, bus dati e segnali di sincronizzazione</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* C & Java Snippets Dropdown */}
         <div className="relative" ref={codeSnippetMenuRef}>
           <button
@@ -2036,6 +2197,7 @@ stateDiagram-v2
             onClick={() => {
               setShowCodeSnippetMenu(!showCodeSnippetMenu);
               setShowDiagramMenu(false);
+              setShowCircuitMenu(false);
             }}
             className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/10 text-amber-600 dark:text-amber-400 font-medium transition-colors"
             title="Snippet e agevolazioni per linguaggio C e Java"
@@ -2665,6 +2827,18 @@ classDiagram
                       );
                     }
 
+                    if (['circuit', 'logic', 'digital', 'arch', 'timing', 'wave'].includes(lang)) {
+                      return (
+                        <div key={block.id} className="relative group my-3">
+                          <CircuitRenderer
+                            code={codeBody}
+                            lang={lang}
+                            onEdit={() => handleStartEditBlock(block)}
+                          />
+                        </div>
+                      );
+                    }
+
                     return (
                       <CodeBlockView
                         key={block.id}
@@ -2870,6 +3044,10 @@ classDiagram
 
                       if (lang === 'mermaid') {
                         return <MermaidRenderer key={b.id} code={codeBody} />;
+                      }
+
+                      if (['circuit', 'logic', 'digital', 'arch', 'timing', 'wave'].includes(lang)) {
+                        return <CircuitRenderer key={b.id} code={codeBody} lang={lang} />;
                       }
 
                       return <CodeBlockView key={b.id} lang={lang} code={codeBody} />;
