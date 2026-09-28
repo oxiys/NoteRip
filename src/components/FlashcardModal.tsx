@@ -56,9 +56,7 @@ export const FlashcardModal: React.FC = () => {
     flashcards,
     closeFlashcardSession,
     recordCardReview,
-    updateActiveContent,
-    activeNotePath,
-    activeNoteContent,
+    setActiveView,
   } = useVaultStore();
 
   const [selectedFolder, setSelectedFolder] = useState<string>('all');
@@ -84,11 +82,12 @@ export const FlashcardModal: React.FC = () => {
     }
   }, [isFlashcardModalOpen, flashcardTargetFolder]);
 
-  // Extract unique folders that have cards
+  // Extract unique decks that have cards
   const availableFolders = useMemo(() => {
     const set = new Set<string>();
     flashcards.forEach((c) => {
-      if (c.folder) set.add(c.folder);
+      const d = c.deck || c.folder || 'Generale';
+      set.add(d);
     });
     return Array.from(set).sort();
   }, [flashcards]);
@@ -97,13 +96,14 @@ export const FlashcardModal: React.FC = () => {
   const activeDeck = useMemo(() => {
     const now = Date.now();
     return flashcards.filter((card) => {
+      const d = card.deck || card.folder || 'Generale';
       // Filter by specific note if launched from note
       if (flashcardTargetNotePath && card.notePath !== flashcardTargetNotePath) {
         return false;
       }
 
-      // Filter by folder
-      if (selectedFolder !== 'all' && card.folder !== selectedFolder) {
+      // Filter by deck
+      if (selectedFolder !== 'all' && d !== selectedFolder) {
         return false;
       }
 
@@ -165,13 +165,9 @@ export const FlashcardModal: React.FC = () => {
     }
   };
 
-  const handleInsertSampleFlashcards = () => {
-    if (!activeNotePath) return;
-    const sample = `\n\n### 🧠 Flashcard di Ripasso Rapido
-Cos'è un bus di sistema?::Un canale di trasmissione condiviso tra CPU, memoria RAM e dispositivi di I/O.
-L'architettura dei calcolatori x86 è di tipo {c1::CISC}, mentre l'architettura ARM è {c2::RISC}.
-La memoria Cache L1 ha una latenza {c1::minore} rispetto alla memoria principale RAM.\n`;
-    updateActiveContent(activeNoteContent + sample);
+  const handleOpenFlashcardsSection = () => {
+    closeFlashcardSession();
+    setActiveView('flashcards');
   };
 
   // Stats for badge
@@ -342,15 +338,13 @@ La memoria Cache L1 ha una latenza {c1::minore} rispetto alla memoria principale
                 </div>
               </div>
 
-              {activeNotePath && (
-                <button
-                  onClick={handleInsertSampleFlashcards}
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold shadow-apple-sm transition-all inline-flex items-center gap-1.5"
-                >
-                  <Sparkles size={13} />
-                  <span>Inserisci Flashcard d'esempio in questa nota</span>
-                </button>
-              )}
+              <button
+                onClick={handleOpenFlashcardsSection}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold shadow-apple-sm transition-all inline-flex items-center gap-1.5"
+              >
+                <Sparkles size={13} />
+                <span>Apri Sezione Flashcards Standalone</span>
+              </button>
             </div>
           ) : currentCard ? (
             /* Active Flashcard Review View */

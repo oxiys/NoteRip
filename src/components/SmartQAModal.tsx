@@ -74,6 +74,8 @@ export const SmartQAModal: React.FC = () => {
     updateActiveContent,
     activeNoteContent,
     activeNotePath,
+    notes,
+    addFlashcard,
   } = useVaultStore();
 
   const [question, setQuestion] = useState('');
@@ -189,17 +191,25 @@ export const SmartQAModal: React.FC = () => {
     setTimeout(() => setInserted(false), 2000);
   };
 
-  const handleConvertToFlashcard = () => {
-    if (!activeNotePath) {
-      alert('Apri prima una nota nell\'editor per inserire la flashcard.');
+  const handleConvertToFlashcard = async () => {
+    const answer = (qaResult?.directAnswer || generativeAnswer || '').trim();
+    if (!question.trim() || !answer) {
+      alert('Non c\'è una domanda o risposta valida da convertire in flashcard.');
       return;
     }
-    const answer = (qaResult?.directAnswer || generativeAnswer || '').replace(/\n+/g, ' ').trim();
-    const flashcardText = `\n${question}?::${answer}\n`;
 
-    const newContent = activeNoteContent ? `${activeNoteContent}\n${flashcardText}` : flashcardText;
-    updateActiveContent(newContent);
-    alert('Flashcard inserita con successo nella nota attiva! Ora puoi ripassarla con SM-2.');
+    const currentNote = notes.find((n) => n.path === activeNotePath);
+    const targetDeck = currentNote?.folder || 'Smart Q&A';
+
+    await addFlashcard({
+      deck: targetDeck,
+      front: question.trim(),
+      back: answer,
+      notePath: activeNotePath || undefined,
+      noteTitle: currentNote?.title,
+    });
+
+    alert(`Flashcard creata con successo nel mazzo "${targetDeck}"! Puoi ripassarla nella sezione Flashcards.`);
   };
 
   if (!isSmartQAModalOpen) return null;

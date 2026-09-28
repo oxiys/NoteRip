@@ -71,20 +71,25 @@ export interface FlashcardProgress {
 
 export interface FlashcardItem {
   id: string;
-  notePath: string;
-  noteTitle: string;
-  folder: string;
-  type: FlashcardType;
-  front: string; // Question or Cloze masked with [...]
-  back: string; // Answer or revealed Cloze
-  rawText: string;
+  deck: string;
+  front: string; // Question or Front
+  back: string; // Answer or Back
+  tags?: string[];
+  notePath?: string; // Optional reference to a note
+  noteTitle?: string;
+  folder?: string; // Legacy alias for deck
+  type?: FlashcardType;
+  rawText?: string;
   clozeIndex?: number;
-  lineNumber: number;
+  lineNumber?: number;
   progress: FlashcardProgress;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface FlashcardDeckSummary {
-  folder: string;
+  deck: string;
+  folder?: string; // Legacy alias for deck
   totalCards: number;
   dueCards: number;
   newCards: number;

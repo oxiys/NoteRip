@@ -10,9 +10,10 @@ import type {
 import { tauriBridge } from '../services/tauriBridge';
 import { computeBidirectionalLinks, normalizeNoteName } from '../services/indexer';
 import {
-  parseAllFlashcards,
-  loadFlashcardProgressMap,
-  saveCardProgress,
+  loadStandaloneFlashcards,
+  saveStandaloneFlashcards,
+  createDefaultProgress,
+  generateCardId,
   calculateSM2Review,
   getDueCards,
 } from '../services/flashcardService';
@@ -45,7 +46,7 @@ interface VaultState {
   lastSavedTime: number | null;
   selectedFolder: string | null;
   searchQuery: string;
-  activeView: 'notes' | 'graph';
+  activeView: 'notes' | 'graph' | 'flashcards';
   isInspectorOpen: boolean;
   isSidebarOpen: boolean;
   theme: AppTheme;
@@ -101,7 +102,7 @@ interface VaultState {
   setFolderExpanded: (path: string, expanded: boolean) => void;
   expandAllFolders: () => void;
   collapseAllFolders: () => void;
-  setActiveView: (view: 'notes' | 'graph') => void;
+  setActiveView: (view: 'notes' | 'graph' | 'flashcards') => void;
   toggleInspector: () => void;
   toggleSidebar: () => void;
   toggleDarkMode: () => void;
@@ -114,11 +115,23 @@ interface VaultState {
   toggleSyncModal: () => void;
   setAutoSyncInterval: (interval: AutoSyncOption) => void;
 
-  // Flashcard Actions
+  // Flashcard Actions (Standalone Spaced Repetition)
+  loadFlashcards: () => Promise<void>;
+  addFlashcard: (card: {
+    deck: string;
+    front: string;
+    back: string;
+    tags?: string[];
+    notePath?: string;
+    noteTitle?: string;
+  }) => Promise<FlashcardItem>;
+  updateFlashcard: (id: string, updates: Partial<FlashcardItem>) => Promise<void>;
+  deleteFlashcard: (id: string) => Promise<void>;
+  resetFlashcardProgress: (id: string) => Promise<void>;
   openFlashcardSession: (targetFolder?: string | null, targetNotePath?: string | null) => void;
   closeFlashcardSession: () => void;
-  recordCardReview: (cardId: string, rating: FlashcardRating) => void;
-  refreshFlashcards: () => void;
+  recordCardReview: (cardId: string, rating: FlashcardRating) => Promise<void>;
+  refreshFlashcards: () => Promise<void>;
 
   // Command Palette & Quick Switcher (Ctrl+K / Cmd+K)
   isCommandPaletteOpen: boolean;
@@ -272,6 +285,8 @@ export const useVaultStore = create<VaultState>((set, get) => {
         get().runGitSync('Auto-sync periodico');
       });
 
+      await get().refreshFlashcards();
+
       const savedPath = localStorage.getItem(VAULT_PATH_KEY);
       if (savedPath) {
         await get().loadVault(savedPath);
@@ -380,6 +395,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
         set({
           activeNotePath: path,
           activeNoteContent: content,
+          activeView: 'notes',
           undoStack: [content],
           redoStack: [],
           canUndo: false,
@@ -537,7 +553,6 @@ export const useVaultStore = create<VaultState>((set, get) => {
           saveTimeoutId: null,
         });
 
-        get().refreshFlashcards();
         semanticSearchEngine.indexVault(reindexed);
 
         // Auto-sync on save if enabled (rate-limited / only if not already syncing)
@@ -686,7 +701,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
     setSelectedFolder: (folder: string | null) => set({ selectedFolder: folder }),
     setSearchQuery: (query: string) => set({ searchQuery: query }),
-    setActiveView: (view: 'notes' | 'graph') => set({ activeView: view }),
+    setActiveView: (view: 'notes' | 'graph' | 'flashcards') => set({ activeView: view }),
     toggleInspector: () => set((state) => ({ isInspectorOpen: !state.isInspectorOpen })),
     toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
@@ -815,6 +830,68 @@ export const useVaultStore = create<VaultState>((set, get) => {
       set({ expandedFolders: {} });
     },
 
+    loadFlashcards: async () => {
+      await get().refreshFlashcards();
+    },
+
+    refreshFlashcards: async () => {
+      const { vaultPath } = get();
+      const cards = await loadStandaloneFlashcards(vaultPath);
+      const dueCount = getDueCards(cards).length;
+      set({
+        flashcards: cards,
+        dueFlashcardsCount: dueCount,
+      });
+    },
+
+    addFlashcard: async (cardData) => {
+      const { flashcards, vaultPath } = get();
+      const newCard: FlashcardItem = {
+        id: generateCardId(),
+        deck: cardData.deck?.trim() || 'Generale',
+        front: cardData.front.trim(),
+        back: cardData.back.trim(),
+        tags: cardData.tags || [],
+        notePath: cardData.notePath,
+        noteTitle: cardData.noteTitle,
+        progress: createDefaultProgress(),
+        createdAt: Date.now(),
+      };
+      const updated = [newCard, ...flashcards];
+      const dueCount = getDueCards(updated).length;
+      set({ flashcards: updated, dueFlashcardsCount: dueCount });
+      await saveStandaloneFlashcards(updated, vaultPath);
+      return newCard;
+    },
+
+    updateFlashcard: async (id: string, updates: Partial<FlashcardItem>) => {
+      const { flashcards, vaultPath } = get();
+      const updated = flashcards.map((c) =>
+        c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c
+      );
+      const dueCount = getDueCards(updated).length;
+      set({ flashcards: updated, dueFlashcardsCount: dueCount });
+      await saveStandaloneFlashcards(updated, vaultPath);
+    },
+
+    deleteFlashcard: async (id: string) => {
+      const { flashcards, vaultPath } = get();
+      const updated = flashcards.filter((c) => c.id !== id);
+      const dueCount = getDueCards(updated).length;
+      set({ flashcards: updated, dueFlashcardsCount: dueCount });
+      await saveStandaloneFlashcards(updated, vaultPath);
+    },
+
+    resetFlashcardProgress: async (id: string) => {
+      const { flashcards, vaultPath } = get();
+      const updated = flashcards.map((c) =>
+        c.id === id ? { ...c, progress: createDefaultProgress() } : c
+      );
+      const dueCount = getDueCards(updated).length;
+      set({ flashcards: updated, dueFlashcardsCount: dueCount });
+      await saveStandaloneFlashcards(updated, vaultPath);
+    },
+
     openFlashcardSession: (targetFolder = null, targetNotePath = null) => {
       get().refreshFlashcards();
       set({
@@ -832,19 +909,12 @@ export const useVaultStore = create<VaultState>((set, get) => {
       });
     },
 
-    recordCardReview: (cardId: string, rating: FlashcardRating) => {
-      const { flashcards, flashcardProgressMap } = get();
+    recordCardReview: async (cardId: string, rating: FlashcardRating) => {
+      const { flashcards, vaultPath } = get();
       const card = flashcards.find((c) => c.id === cardId);
       if (!card) return;
 
       const newProgress = calculateSM2Review(card.progress, rating);
-      saveCardProgress(cardId, newProgress);
-
-      const updatedProgressMap = {
-        ...flashcardProgressMap,
-        [cardId]: newProgress,
-      };
-
       const updatedCards = flashcards.map((c) =>
         c.id === cardId ? { ...c, progress: newProgress } : c
       );
@@ -853,22 +923,10 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
       set({
         flashcards: updatedCards,
-        flashcardProgressMap: updatedProgressMap,
         dueFlashcardsCount: dueCount,
       });
-    },
 
-    refreshFlashcards: () => {
-      const { notes } = get();
-      const progressMap = loadFlashcardProgressMap();
-      const cards = parseAllFlashcards(notes, progressMap);
-      const dueCount = getDueCards(cards).length;
-
-      set({
-        flashcards: cards,
-        flashcardProgressMap: progressMap,
-        dueFlashcardsCount: dueCount,
-      });
+      await saveStandaloneFlashcards(updatedCards, vaultPath);
     },
 
     openCommandPalette: (initialQuery = '') =>

@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { EditorView } from './components/EditorView';
 import { InspectorPanel } from './components/InspectorPanel';
 import { GraphView } from './components/GraphView';
+import { FlashcardsView } from './components/FlashcardsView';
 import { SyncModal } from './components/SyncModal';
 import { FlashcardModal } from './components/FlashcardModal';
 import { CommandPalette } from './components/CommandPalette';
@@ -25,6 +26,9 @@ export const App: React.FC = () => {
       {activeView === 'graph' ? (
         /* Fullscreen Interactive Physics Graph */
         <GraphView />
+      ) : activeView === 'flashcards' ? (
+        /* Fullscreen Dedicated Flashcards Section */
+        <FlashcardsView />
       ) : (
         /* Obsidian-Style Layout: Main Markdown Editor & Live Preview with Floating Inspector Card */
         <div className="flex-1 h-full flex relative overflow-hidden min-w-0">

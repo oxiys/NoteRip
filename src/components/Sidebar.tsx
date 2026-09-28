@@ -110,7 +110,6 @@ export const Sidebar: React.FC = () => {
     setTheme,
     toggleSyncModal,
     setActiveView,
-    openFlashcardSession,
     dueFlashcardsCount,
     flashcards,
     openCommandPalette,
@@ -292,11 +291,19 @@ export const Sidebar: React.FC = () => {
               <Bot size={14} />
             </button>
 
-            {/* Flashcard SM-2 Study Session */}
+            {/* Flashcard SM-2 Spaced Repetition Section */}
             <button
-              onClick={() => openFlashcardSession()}
-              className="relative p-1.5 rounded-md hover:bg-amber-500/10 dark:hover:bg-amber-500/20 text-[var(--text-secondary)] hover:text-amber-500 transition-colors"
-              title={`Sessione Flashcards SM-2 (${dueFlashcardsCount} da ripassare su ${flashcards.length} totali)`}
+              onClick={() => setActiveView(activeView === 'flashcards' ? 'notes' : 'flashcards')}
+              className={`relative p-1.5 rounded-md transition-colors ${
+                activeView === 'flashcards'
+                  ? 'bg-amber-500/15 text-amber-500 font-semibold'
+                  : 'text-[var(--text-secondary)] hover:text-amber-500 hover:bg-amber-500/10'
+              }`}
+              title={
+                activeView === 'flashcards'
+                  ? 'Torna alle note'
+                  : `Sezione Flashcards SM-2 (${dueFlashcardsCount} in scadenza su ${flashcards.length} totali)`
+              }
             >
               <Brain size={14} />
               {dueFlashcardsCount > 0 && (
