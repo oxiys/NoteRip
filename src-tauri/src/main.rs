@@ -18,5 +18,22 @@ fn main() {
         }
     }
 
-    app_lib::run();
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        let app_id: Vec<u16> = OsStr::new("com.noterip.desktop")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            #[link(name = "shell32")]
+            unsafe extern "system" {
+                fn SetCurrentProcessExplicitAppUserModelID(app_id: *const u16) -> i32;
+            }
+            let _ = SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr());
+        }
+    }
+
+    noterip_lib::run();
 }
