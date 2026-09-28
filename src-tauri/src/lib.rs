@@ -61,6 +61,7 @@ fn git_sync_vault(vault_path: String, commit_msg: Option<String>) -> Result<GitS
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            use tauri::Manager;
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -68,6 +69,13 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = window.set_icon(icon.clone());
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
