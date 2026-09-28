@@ -235,15 +235,15 @@ export const Sidebar: React.FC = () => {
       }`}
     >
       {/* 1. Header Toolbar: App Name & Vault Switcher */}
-      <div className="p-3 border-b border-[#272C36] space-y-2.5">
+      <div data-tauri-drag-region className="p-3 border-b border-[#272C36] space-y-2.5">
         <div className="flex items-center justify-between">
           <div
             onClick={openVaultDialog}
             title={`Vault: ${vaultPath || 'Nessuno'}\nClicca per cambiare cartella`}
-            className="flex items-center gap-2 min-w-0 cursor-pointer p-1 rounded-xl hover:bg-[#171B22] border border-transparent hover:border-[#272C36] transition-colors"
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer p-1 rounded-xl hover:bg-[#171B22] border border-transparent hover:border-[#272C36] transition-colors"
           >
-            <div className="w-6 h-6 rounded-lg bg-[#171B22] border border-[#272C36] flex items-center justify-center text-[#E5484D] shrink-0 font-bold text-xs">
-              NR
+            <div className="w-7 h-7 rounded-xl bg-[#171B22] border border-[#272C36] flex items-center justify-center p-1 shrink-0 overflow-hidden shadow-2xs">
+              <img src="/logo.png" alt="NoteRip Logo" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
               <span className="block text-xs font-semibold text-[#F3F4F6] truncate tracking-tight">

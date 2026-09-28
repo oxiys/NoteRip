@@ -14,6 +14,7 @@ import {
   Sparkles,
   Brain,
 } from 'lucide-react';
+import { WindowControls } from './WindowControls';
 
 export const TopBar: React.FC = () => {
   const {
@@ -53,7 +54,10 @@ export const TopBar: React.FC = () => {
   };
 
   return (
-    <header className="h-14 w-full bg-[#0E1116] border-b border-[#272C36] px-4 flex items-center justify-between gap-4 select-none shrink-0 z-30">
+    <header
+      data-tauri-drag-region
+      className="h-14 w-full bg-[#0E1116] border-b border-[#272C36] px-4 flex items-center justify-between gap-4 select-none shrink-0 z-30"
+    >
       {/* Left: Sidebar Toggle & Active Note Breadcrumbs */}
       <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
         <button
@@ -63,6 +67,13 @@ export const TopBar: React.FC = () => {
         >
           {isSidebarOpen ? <PanelLeftClose size={16} strokeWidth={1.5} /> : <PanelLeft size={16} strokeWidth={1.5} />}
         </button>
+
+        {!isSidebarOpen && (
+          <div className="flex items-center gap-2 pr-1">
+            <img src="/logo.png" alt="NoteRip" className="w-5 h-5 object-contain shrink-0" />
+            <span className="font-semibold text-xs tracking-tight text-[#F3F4F6] hidden md:inline">NoteRip</span>
+          </div>
+        )}
 
         {activeNote ? (
           <div className="flex items-center gap-2 text-xs truncate">
@@ -207,6 +218,12 @@ export const TopBar: React.FC = () => {
         >
           <PanelRight size={15} strokeWidth={1.5} />
         </button>
+
+        {/* Subtle Divider */}
+        <div className="w-[1px] h-4 bg-[#272C36] mx-0.5 shrink-0" />
+
+        {/* macOS Traffic Lights Window Controls (Top Right) */}
+        <WindowControls />
       </div>
     </header>
   );
