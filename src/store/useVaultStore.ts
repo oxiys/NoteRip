@@ -70,12 +70,20 @@ interface VaultState {
   dueFlashcardsCount: number;
   flashcardProgressMap: Record<string, FlashcardProgress>;
 
+  // History & Undo / Redo
+  undoStack: string[];
+  redoStack: string[];
+  canUndo: boolean;
+  canRedo: boolean;
+  undo: () => void;
+  redo: () => void;
+
   // Actions
   initialize: () => Promise<void>;
   openVaultDialog: () => Promise<void>;
   loadVault: (path: string) => Promise<void>;
   selectNote: (path: string) => Promise<void>;
-  updateActiveContent: (content: string) => void;
+  updateActiveContent: (content: string, isAtomic?: boolean) => void;
   saveActiveNote: () => Promise<void>;
   createNewNote: (title?: string, folder?: string) => Promise<string | null>;
   createFolder: (folderName: string, parentFolder?: string) => Promise<string | null>;
@@ -189,6 +197,8 @@ function getInitialTheme(): AppTheme {
   return 'catppuccin-mocha';
 }
 
+let lastHistorySnapshotTime = 0;
+
 export const useVaultStore = create<VaultState>((set, get) => {
   const initialTheme = getInitialTheme();
   const initialAutoSync = getInitialAutoSync();
@@ -199,6 +209,10 @@ export const useVaultStore = create<VaultState>((set, get) => {
     notes: [],
     activeNotePath: null,
     activeNoteContent: '',
+    undoStack: [],
+    redoStack: [],
+    canUndo: false,
+    canRedo: false,
     isDirty: false,
     selectedFolder: null,
     searchQuery: '',
@@ -356,9 +370,14 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
       try {
         const content = await tauriBridge.readNote(path);
+        lastHistorySnapshotTime = Date.now();
         set({
           activeNotePath: path,
           activeNoteContent: content,
+          undoStack: [content],
+          redoStack: [],
+          canUndo: false,
+          canRedo: false,
           isDirty: false,
         });
       } catch (err) {
@@ -366,9 +385,22 @@ export const useVaultStore = create<VaultState>((set, get) => {
       }
     },
 
-    updateActiveContent: (content: string) => {
-      const { activeNotePath, saveTimeoutId } = get();
-      if (!activeNotePath) return;
+    updateActiveContent: (content: string, isAtomic: boolean = false) => {
+      const { activeNotePath, activeNoteContent, undoStack, saveTimeoutId } = get();
+      if (!activeNotePath || content === activeNoteContent) return;
+
+      const now = Date.now();
+      let newUndoStack = [...undoStack];
+
+      if (isAtomic) {
+        newUndoStack.push(activeNoteContent);
+        if (newUndoStack.length > 50) newUndoStack.shift();
+        lastHistorySnapshotTime = now;
+      } else if (now - lastHistorySnapshotTime > 800) {
+        newUndoStack.push(activeNoteContent);
+        if (newUndoStack.length > 50) newUndoStack.shift();
+        lastHistorySnapshotTime = now;
+      }
 
       if (saveTimeoutId) {
         window.clearTimeout(saveTimeoutId);
@@ -380,6 +412,68 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
       set({
         activeNoteContent: content,
+        undoStack: newUndoStack,
+        redoStack: [],
+        canUndo: newUndoStack.length > 0,
+        canRedo: false,
+        isDirty: true,
+        saveTimeoutId: timeoutId,
+      });
+    },
+
+    undo: () => {
+      const { activeNotePath, activeNoteContent, undoStack, redoStack, saveTimeoutId } = get();
+      if (!activeNotePath || undoStack.length === 0) return;
+
+      const newUndoStack = [...undoStack];
+      const prevContent = newUndoStack.pop();
+      if (prevContent === undefined) return;
+
+      const newRedoStack = [...redoStack, activeNoteContent];
+
+      if (saveTimeoutId) {
+        window.clearTimeout(saveTimeoutId);
+      }
+      const timeoutId = window.setTimeout(() => {
+        get().saveActiveNote();
+      }, 800);
+
+      lastHistorySnapshotTime = Date.now();
+      set({
+        activeNoteContent: prevContent,
+        undoStack: newUndoStack,
+        redoStack: newRedoStack,
+        canUndo: newUndoStack.length > 0,
+        canRedo: true,
+        isDirty: true,
+        saveTimeoutId: timeoutId,
+      });
+    },
+
+    redo: () => {
+      const { activeNotePath, activeNoteContent, undoStack, redoStack, saveTimeoutId } = get();
+      if (!activeNotePath || redoStack.length === 0) return;
+
+      const newRedoStack = [...redoStack];
+      const nextContent = newRedoStack.pop();
+      if (nextContent === undefined) return;
+
+      const newUndoStack = [...undoStack, activeNoteContent];
+
+      if (saveTimeoutId) {
+        window.clearTimeout(saveTimeoutId);
+      }
+      const timeoutId = window.setTimeout(() => {
+        get().saveActiveNote();
+      }, 800);
+
+      lastHistorySnapshotTime = Date.now();
+      set({
+        activeNoteContent: nextContent,
+        undoStack: newUndoStack,
+        redoStack: newRedoStack,
+        canUndo: true,
+        canRedo: newRedoStack.length > 0,
         isDirty: true,
         saveTimeoutId: timeoutId,
       });

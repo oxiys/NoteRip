@@ -36,6 +36,8 @@ import {
   MoveHorizontal,
   Brain,
   Bot,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 
 type EditorMode = 'live' | 'split' | 'source';
@@ -65,6 +67,10 @@ export const EditorView: React.FC = () => {
     openFlashcardSession,
     flashcards,
     openSmartQAModal,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useVaultStore();
 
   // Default mode: 'live' (Obsidian Live Preview)
@@ -183,8 +189,140 @@ export const EditorView: React.FC = () => {
     const newBlockLines = newRawText.split('\n');
     const updatedLines = [...beforeLines, ...newBlockLines, ...afterLines];
 
-    updateActiveContent(updatedLines.join('\n'));
+    updateActiveContent(updatedLines.join('\n'), true);
     setActiveBlockId(null);
+  };
+
+  // Smart Toggle Bold (**text** <-> text) with exact cursor retention
+  const toggleBoldInInput = (
+    input: HTMLTextAreaElement,
+    onUpdate: (newVal: string, selStart: number, selEnd: number) => void
+  ) => {
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const val = input.value;
+
+    if (start !== end) {
+      const selected = val.slice(start, end);
+
+      // Case 1: The selection itself starts and ends with ** (e.g. "**test**")
+      if (selected.startsWith('**') && selected.endsWith('**') && selected.length >= 4) {
+        const unwrapped = selected.slice(2, -2);
+        const newVal = val.slice(0, start) + unwrapped + val.slice(end);
+        onUpdate(newVal, start, start + unwrapped.length);
+        return;
+      }
+
+      // Case 2: The selection is directly surrounded by ** (e.g. "**|test|**")
+      if (start >= 2 && end + 2 <= val.length && val.slice(start - 2, start) === '**' && val.slice(end, end + 2) === '**') {
+        const newVal = val.slice(0, start - 2) + selected + val.slice(end + 2);
+        onUpdate(newVal, start - 2, start - 2 + selected.length);
+        return;
+      }
+
+      // Case 3: Wrap selected text with **
+      const wrapped = `**${selected}**`;
+      const newVal = val.slice(0, start) + wrapped + val.slice(end);
+      onUpdate(newVal, start, start + wrapped.length);
+      return;
+    }
+
+    // If no text is selected:
+    // Check if cursor is directly between empty bold markers: "**|**"
+    if (start >= 2 && start + 2 <= val.length && val.slice(start - 2, start) === '**' && val.slice(start, start + 2) === '**') {
+      const newVal = val.slice(0, start - 2) + val.slice(start + 2);
+      onUpdate(newVal, start - 2, start - 2);
+      return;
+    }
+
+    // Check if cursor is inside a bold phrase on the current line
+    const lastNewline = val.lastIndexOf('\n', start - 1);
+    const lineStart = lastNewline === -1 ? 0 : lastNewline + 1;
+    const nextNewline = val.indexOf('\n', start);
+    const lineEnd = nextNewline === -1 ? val.length : nextNewline;
+
+    const beforeCursor = val.slice(lineStart, start);
+    const afterCursor = val.slice(start, lineEnd);
+
+    const boldCountBefore = (beforeCursor.match(/\*\*/g) || []).length;
+    if (boldCountBefore % 2 === 1) {
+      // Odd count means cursor is inside a bold segment
+      const openIdx = beforeCursor.lastIndexOf('**');
+      const closeIdx = afterCursor.indexOf('**');
+      if (closeIdx !== -1) {
+        const absOpen = lineStart + openIdx;
+        const absClose = start + closeIdx;
+        const innerText = val.slice(absOpen + 2, absClose);
+        const newVal = val.slice(0, absOpen) + innerText + val.slice(absClose + 2);
+        const newPos = Math.max(absOpen, Math.min(absOpen + innerText.length, start - 2));
+        onUpdate(newVal, newPos, newPos);
+        return;
+      }
+    }
+
+    // Default: Insert **** and place cursor between them
+    const newVal = val.slice(0, start) + '****' + val.slice(start);
+    onUpdate(newVal, start + 2, start + 2);
+  };
+
+  const handleToggleBold = () => {
+    // 1. If currently editing a block in Live Preview
+    if (activeBlockId !== null && blockInputRef.current) {
+      const input = blockInputRef.current;
+      toggleBoldInInput(input, (newVal, selStart, selEnd) => {
+        setActiveBlockDraft(newVal);
+        requestAnimationFrame(() => {
+          if (blockInputRef.current) {
+            blockInputRef.current.focus({ preventScroll: true });
+            blockInputRef.current.setSelectionRange(selStart, selEnd);
+          }
+        });
+      });
+      return;
+    }
+
+    // 2. If in Split or Source mode textarea
+    if (textareaRef.current && (mode === 'split' || mode === 'source')) {
+      const textarea = textareaRef.current;
+      toggleBoldInInput(textarea, (newVal, selStart, selEnd) => {
+        const savedScrollTop = textarea.scrollTop;
+        updateActiveContent(newVal, true);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus({ preventScroll: true });
+            textareaRef.current.scrollTop = savedScrollTop;
+            textareaRef.current.setSelectionRange(selStart, selEnd);
+          }
+        });
+      });
+      return;
+    }
+
+    // 3. If user selected text on rendered document in Live Preview
+    const domSelection = window.getSelection()?.toString().trim();
+    if (domSelection && domSelection.length > 0) {
+      const content = activeNoteContent;
+      const boldWrapped = `**${domSelection}**`;
+      if (content.includes(boldWrapped)) {
+        const newContent = content.replace(boldWrapped, domSelection);
+        updateActiveContent(newContent, true);
+      } else {
+        const matchIndex = content.indexOf(domSelection);
+        if (matchIndex !== -1) {
+          const beforeMatch = content.slice(Math.max(0, matchIndex - 2), matchIndex);
+          const afterMatch = content.slice(matchIndex + domSelection.length, matchIndex + domSelection.length + 2);
+          if (beforeMatch === '**' && afterMatch === '**') {
+            const newContent = content.slice(0, matchIndex - 2) + domSelection + content.slice(matchIndex + domSelection.length + 2);
+            updateActiveContent(newContent, true);
+          } else {
+            const newContent = content.slice(0, matchIndex) + boldWrapped + content.slice(matchIndex + domSelection.length);
+            updateActiveContent(newContent, true);
+          }
+        }
+      }
+    } else {
+      applyFormat('**', '**', 'grassetto');
+    }
   };
 
   // Safe Highlighter: requires at least one selected word, never jumps or inserts dummy text
@@ -226,7 +364,7 @@ export const EditorView: React.FC = () => {
       if (matchIndex !== -1) {
         const newContent =
           content.slice(0, matchIndex) + `==${domSelection}==` + content.slice(matchIndex + domSelection.length);
-        updateActiveContent(newContent);
+        updateActiveContent(newContent, true);
 
         requestAnimationFrame(() => {
           if (liveContainerRef.current) {
@@ -274,7 +412,7 @@ export const EditorView: React.FC = () => {
     const parent = textarea.parentElement;
     const savedParentScrollTop = parent?.scrollTop || 0;
 
-    updateActiveContent(newContent);
+    updateActiveContent(newContent, true);
 
     // Lock scroll position and re-select smoothly
     requestAnimationFrame(() => {
@@ -475,30 +613,77 @@ export const EditorView: React.FC = () => {
       if (matchIndex !== -1) {
         const newContent =
           content.slice(0, matchIndex) + `$${domSelection}$` + content.slice(matchIndex + domSelection.length);
-        updateActiveContent(newContent);
+        updateActiveContent(newContent, true);
       }
     } else {
       const newContent = activeNoteContent ? activeNoteContent + '\n$$' : '$$';
-      updateActiveContent(newContent);
+      updateActiveContent(newContent, true);
     }
   };
 
-  // Global Shortcut: Ctrl+M / Cmd+M to insert or wrap inline math ($...$)
+  // Global Shortcuts: Ctrl+Z (Undo), Ctrl+Y / Ctrl+Shift+Z (Redo), Ctrl+B (Toggle Bold), Ctrl+M (Math)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.altKey) {
-        if (!activeNotePath) return;
-        e.preventDefault();
-        e.stopPropagation();
-        handleInsertInlineMath();
+      if (!activeNotePath) return;
+
+      const activeEl = document.activeElement;
+      const isOtherInput =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          (activeEl.tagName === 'TEXTAREA' &&
+            activeEl !== textareaRef.current &&
+            activeEl !== blockInputRef.current));
+      if (isOtherInput) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl+Z: Undo / Redo
+        if ((e.key === 'z' || e.key === 'Z') && !e.altKey) {
+          if (activeEl === textareaRef.current) return; // Handled by textarea onKeyDown
+          e.preventDefault();
+          e.stopPropagation();
+          if (activeBlockId !== null) setActiveBlockId(null);
+          if (e.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+          return;
+        }
+
+        // Ctrl+Y: Redo
+        if ((e.key === 'y' || e.key === 'Y') && !e.shiftKey && !e.altKey) {
+          if (activeEl === textareaRef.current) return; // Handled by textarea onKeyDown
+          e.preventDefault();
+          e.stopPropagation();
+          if (activeBlockId !== null) setActiveBlockId(null);
+          redo();
+          return;
+        }
+
+        // Ctrl+B: Toggle Bold
+        if ((e.key === 'b' || e.key === 'B') && !e.shiftKey && !e.altKey) {
+          if (activeEl === textareaRef.current) return; // Handled by textarea onKeyDown
+          e.preventDefault();
+          e.stopPropagation();
+          handleToggleBold();
+          return;
+        }
+
+        // Ctrl+M: Inline Math
+        if ((e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleInsertInlineMath();
+          return;
+        }
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [activeNotePath, activeBlockId, activeBlockDraft, activeNoteContent]);
+  }, [activeNotePath, activeBlockId, activeBlockDraft, activeNoteContent, mode, canUndo, canRedo]);
 
-  // LaTeX Suite snippet expansions ('mk' -> $ | $, 'dm' -> $$\n|\n$$, auto-wrap $)
+  // LaTeX Suite snippet expansions ('mk' -> $ | $, 'dm' -> $$\n|\n$$, auto-wrap $) and local shortcuts
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -506,6 +691,33 @@ export const EditorView: React.FC = () => {
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const content = activeNoteContent;
+
+    // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y: Undo & Redo with robust store history
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y') && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      redo();
+      return;
+    }
+
+    // Ctrl+B: Toggle Bold
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B') && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleToggleBold();
+      return;
+    }
 
     // Ctrl+M or Cmd+M: Insert or wrap inline math ($...$)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.altKey) {
@@ -521,7 +733,7 @@ export const EditorView: React.FC = () => {
       const selectedText = content.slice(start, end);
       const wrapped = `$${selectedText}$`;
       const newContent = content.slice(0, start) + wrapped + content.slice(end);
-      updateActiveContent(newContent);
+      updateActiveContent(newContent, true);
       requestAnimationFrame(() => {
         if (textareaRef.current) {
           textareaRef.current.focus({ preventScroll: true });
@@ -537,7 +749,7 @@ export const EditorView: React.FC = () => {
       const selectedText = content.slice(start, end);
       const wrapped = `[[${selectedText}]]`;
       const newContent = content.slice(0, start) + wrapped + content.slice(end);
-      updateActiveContent(newContent);
+      updateActiveContent(newContent, true);
       requestAnimationFrame(() => {
         if (textareaRef.current) {
           textareaRef.current.focus({ preventScroll: true });
@@ -551,7 +763,7 @@ export const EditorView: React.FC = () => {
     if (e.key === 'Tab') {
       e.preventDefault();
       const newContent = content.slice(0, start) + '  ' + content.slice(end);
-      updateActiveContent(newContent);
+      updateActiveContent(newContent, true);
       requestAnimationFrame(() => {
         if (textareaRef.current) {
           textareaRef.current.focus({ preventScroll: true });
@@ -1417,6 +1629,38 @@ export const EditorView: React.FC = () => {
 
       {/* Word-Style Rich Formatting Toolbar (Non-blurring onMouseDown) */}
       <div className="px-3 py-1.5 border-b border-black/5 dark:border-white/10 flex items-center flex-wrap gap-1 bg-black/[0.02] dark:bg-white/[0.02] select-none text-neutral-600 dark:text-neutral-300 text-xs">
+        {/* Undo / Redo */}
+        <div className="flex items-center space-x-0.5">
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={undo}
+            disabled={!canUndo}
+            className={`p-1 rounded transition-colors ${
+              canUndo
+                ? 'hover:bg-black/5 dark:hover:bg-white/10 text-neutral-700 dark:text-neutral-200 cursor-pointer'
+                : 'opacity-30 cursor-not-allowed text-neutral-400'
+            }`}
+            title="Annulla operazione (Ctrl+Z)"
+          >
+            <Undo2 size={15} />
+          </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={redo}
+            disabled={!canRedo}
+            className={`p-1 rounded transition-colors ${
+              canRedo
+                ? 'hover:bg-black/5 dark:hover:bg-white/10 text-neutral-700 dark:text-neutral-200 cursor-pointer'
+                : 'opacity-30 cursor-not-allowed text-neutral-400'
+            }`}
+            title="Ripristina operazione (Ctrl+Y / Ctrl+Shift+Z)"
+          >
+            <Redo2 size={15} />
+          </button>
+        </div>
+
+        <div className="h-4 w-px bg-black/10 dark:border-white/10 mx-0.5" />
+
         {/* Headings */}
         <div className="flex items-center space-x-0.5">
           <button
@@ -1451,9 +1695,9 @@ export const EditorView: React.FC = () => {
         <div className="flex items-center space-x-0.5">
           <button
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => applyFormat('**', '**', 'grassetto')}
+            onClick={handleToggleBold}
             className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors font-bold"
-            title="Grassetto (**B**)"
+            title="Grassetto Toggle (Ctrl+B)"
           >
             <Bold size={15} />
           </button>
@@ -2134,6 +2378,34 @@ classDiagram
                         onChange={(e) => setActiveBlockDraft(e.target.value)}
                         onBlur={() => commitBlockEdit(block.id, activeBlockDraft)}
                         onKeyDown={(e) => {
+                          if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B') && !e.shiftKey && !e.altKey) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleToggleBold();
+                            return;
+                          }
+                          if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.altKey) {
+                            if (e.shiftKey) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setActiveBlockId(null);
+                              redo();
+                              return;
+                            } else if (activeBlockDraft === block.rawText) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setActiveBlockId(null);
+                              undo();
+                              return;
+                            }
+                          }
+                          if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y') && !e.shiftKey && !e.altKey) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setActiveBlockId(null);
+                            redo();
+                            return;
+                          }
                           if ((e.ctrlKey || e.metaKey) && (e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.altKey) {
                             e.preventDefault();
                             e.stopPropagation();
