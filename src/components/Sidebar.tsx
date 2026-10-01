@@ -3,6 +3,7 @@ import {
   useVaultStore,
   normalizePath,
   getPathDirname,
+  getPathBasename,
 } from '../store/useVaultStore';
 import type { FileSortOption } from '../store/useVaultStore';
 import type { FileNode } from '../types';
@@ -96,6 +97,16 @@ export const Sidebar: React.FC = () => {
   const [isDragOverRoot, setIsDragOverRoot] = useState(false);
   const hoverExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
+
+  // Pointer-based mouse drag state (guarantees 100% reliable drag-and-drop across desktop webview)
+  const [pointerDrag, setPointerDrag] = useState<{
+    items: string[];
+    x: number;
+    y: number;
+    targetFolder: string | null;
+    isRoot: boolean;
+  } | null>(null);
+  const justDraggedRef = useRef(false);
 
   // Inline rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -538,6 +549,163 @@ export const Sidebar: React.FC = () => {
     }
   };
 
+  // Pointer-based (mouse) drag handler for 100% reliable desktop drag-and-drop
+  const handleRowMouseDown = (e: React.MouseEvent, nodePath: string) => {
+    // Only primary mouse button (left click)
+    if (e.button !== 0) return;
+    if (renamingPath) return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let didStartDrag = false;
+
+    const currentSelected = useVaultStore.getState().selectedPaths;
+    const isModifier = e.ctrlKey || e.metaKey || e.shiftKey;
+    const itemsToDrag = currentSelected.includes(nodePath)
+      ? currentSelected
+      : isModifier
+      ? [...currentSelected, nodePath]
+      : [nodePath];
+
+    const cleanup = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    const handleKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === 'Escape') {
+        cleanup();
+        setPointerDrag(null);
+        handleDragEnd();
+      }
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (moveEvent.buttons === 0) {
+        cleanup();
+        setPointerDrag(null);
+        handleDragEnd();
+        return;
+      }
+
+      const dist = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (!didStartDrag && dist > 4) {
+        didStartDrag = true;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'grabbing';
+        activeDraggedPaths = itemsToDrag;
+        setDraggedPaths(itemsToDrag);
+        if (!currentSelected.includes(nodePath)) {
+          setSelectedPaths(itemsToDrag);
+        }
+      }
+
+      if (didStartDrag) {
+        moveEvent.preventDefault();
+        const el = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+        const dropTargetEl = el?.closest('[data-droptarget]');
+
+        let targetFolder: string | null = null;
+        let isRoot = false;
+
+        if (dropTargetEl) {
+          const targetType = dropTargetEl.getAttribute('data-droptarget');
+          const targetPath = dropTargetEl.getAttribute('data-targetpath');
+
+          if (targetType === 'folder' && targetPath) {
+            if (canDropInFolder(itemsToDrag, targetPath)) {
+              targetFolder = targetPath;
+            }
+          } else if (targetType === 'file' && targetPath) {
+            const parentFolder = getPathDirname(normalizePath(targetPath));
+            const normVault = vaultPath ? normalizePath(vaultPath).toLowerCase() : '';
+            const isParentRoot = !parentFolder || parentFolder.toLowerCase() === normVault;
+
+            if (isParentRoot) {
+              if (canDropOnRootSources(itemsToDrag)) {
+                isRoot = true;
+              }
+            } else {
+              if (canDropInFolder(itemsToDrag, parentFolder)) {
+                targetFolder = parentFolder;
+              }
+            }
+          } else if (targetType === 'root') {
+            if (canDropOnRootSources(itemsToDrag)) {
+              isRoot = true;
+            }
+          }
+        }
+
+        setDragOverFolderPath(targetFolder);
+        setIsDragOverRoot(isRoot);
+
+        // Auto-expand folder on hover
+        if (targetFolder) {
+          if (!expandedFolders[targetFolder]) {
+            if (hoverExpandTimerRef.current) clearTimeout(hoverExpandTimerRef.current);
+            hoverExpandTimerRef.current = setTimeout(() => {
+              useVaultStore.getState().setFolderExpanded(targetFolder, true);
+            }, 600);
+          }
+        }
+
+        setPointerDrag({
+          items: itemsToDrag,
+          x: moveEvent.clientX,
+          y: moveEvent.clientY,
+          targetFolder,
+          isRoot,
+        });
+      }
+    };
+
+    const handleMouseUp = async (upEvent: MouseEvent) => {
+      cleanup();
+
+      if (didStartDrag) {
+        justDraggedRef.current = true;
+        setTimeout(() => {
+          justDraggedRef.current = false;
+        }, 150);
+
+        const el = document.elementFromPoint(upEvent.clientX, upEvent.clientY);
+        const dropTargetEl = el?.closest('[data-droptarget]');
+
+        if (dropTargetEl) {
+          const targetType = dropTargetEl.getAttribute('data-droptarget');
+          const targetPath = dropTargetEl.getAttribute('data-targetpath');
+
+          if (targetType === 'folder' && targetPath && canDropInFolder(itemsToDrag, targetPath)) {
+            await moveNodes(itemsToDrag, targetPath);
+          } else if (targetType === 'file' && targetPath) {
+            const parentFolder = getPathDirname(normalizePath(targetPath));
+            const normVault = vaultPath ? normalizePath(vaultPath).toLowerCase() : '';
+            const isParentRoot = !parentFolder || parentFolder.toLowerCase() === normVault;
+
+            if (isParentRoot && canDropOnRootSources(itemsToDrag)) {
+              await moveNodes(itemsToDrag, null);
+            } else if (!isParentRoot && canDropInFolder(itemsToDrag, parentFolder)) {
+              await moveNodes(itemsToDrag, parentFolder);
+            }
+          } else if (targetType === 'root' && canDropOnRootSources(itemsToDrag)) {
+            await moveNodes(itemsToDrag, null);
+          }
+        }
+
+        setPointerDrag(null);
+        handleDragEnd();
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('keydown', handleKeyDown);
+  };
+
   const handleStartCreate = (type: 'file' | 'folder', parentFolderRel?: string) => {
     setCreatingItem({ type, parentFolderRel });
     setCreateInputName('');
@@ -830,13 +998,14 @@ export const Sidebar: React.FC = () => {
           )}
 
           {/* Root Drop Zone Banner (shown during drag if items can be moved to root) */}
-          {draggedPaths.length > 0 && canDropOnRoot && (
+          {(draggedPaths.length > 0 || pointerDrag !== null) && canDropOnRoot && (
             <div
+              data-droptarget="root"
               onDragOver={handleRootDragOver}
               onDragLeave={handleRootDragLeave}
               onDrop={handleRootDrop}
               className={`mx-1 mb-2 py-2 px-3 rounded-xl border border-dashed text-xs text-center font-medium transition-all cursor-pointer ${
-                isDragOverRoot
+                isDragOverRoot || pointerDrag?.isRoot
                   ? 'bg-[#E5484D]/25 border-[#E5484D] text-[#FFFFFF] ring-2 ring-[#E5484D]/50 shadow-md scale-[1.01]'
                   : 'bg-[#171B22]/80 border-[#272C36] text-[#9CA3AF] hover:border-[#E5484D]/60 hover:text-[#F3F4F6]'
               }`}
@@ -921,6 +1090,9 @@ export const Sidebar: React.FC = () => {
                   setSelectedPaths={setSelectedPaths}
                   clearSelection={clearSelection}
                   deleteSelectedNodes={deleteSelectedNodes}
+                  onRowMouseDown={handleRowMouseDown}
+                  justDraggedRef={justDraggedRef}
+                  pointerDrag={pointerDrag}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                   onFolderDragOver={handleFolderDragOver}
@@ -956,8 +1128,10 @@ export const Sidebar: React.FC = () => {
 
           {/* Empty Space at Bottom of Tree (allows clicking to deselect or dropping to root) */}
           <div
+            data-droptarget="root"
             className="flex-1 min-h-[60px]"
             onClick={(e) => {
+              if (justDraggedRef.current) return;
               if (e.target === e.currentTarget) {
                 clearSelection();
               }
@@ -1017,6 +1191,31 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Floating Pointer Drag Badge */}
+      {pointerDrag && (
+        <div
+          className="fixed z-[99999] pointer-events-none px-3 py-1.5 rounded-xl bg-[#171B22]/95 border border-[#E5484D] text-[#F3F4F6] text-xs font-semibold shadow-2xl flex items-center gap-2 backdrop-blur-md transition-none ring-1 ring-[#E5484D]/30"
+          style={{
+            left: pointerDrag.x + 14,
+            top: pointerDrag.y + 14,
+          }}
+        >
+          <span className="w-2 h-2 rounded-full bg-[#E5484D] animate-ping" />
+          <span>
+            {pointerDrag.items.length === 1
+              ? `Sposta "${getPathBasename(pointerDrag.items[0]).replace(/\.(md|markdown|txt)$/i, '')}"`
+              : `Sposta ${pointerDrag.items.length} elementi`}
+          </span>
+          {pointerDrag.targetFolder ? (
+            <span className="text-[10px] text-[#4ADE80] font-normal">
+              → {getPathBasename(pointerDrag.targetFolder)}
+            </span>
+          ) : pointerDrag.isRoot ? (
+            <span className="text-[10px] text-[#4ADE80] font-normal">→ Root</span>
+          ) : null}
+        </div>
+      )}
     </aside>
   );
 };
@@ -1055,6 +1254,9 @@ interface TreeNodeProps {
   onFileDragOver: (e: React.DragEvent, path: string) => void;
   onFileDragLeave: (e: React.DragEvent, path: string) => void;
   onFileDrop: (e: React.DragEvent, path: string) => void;
+  onRowMouseDown: (e: React.MouseEvent, path: string) => void;
+  justDraggedRef: React.RefObject<boolean>;
+  pointerDrag: { items: string[]; targetFolder: string | null; isRoot: boolean } | null;
   onStartCreate: (type: 'file' | 'folder', parentFolderRel?: string) => void;
   setCreateInputName: (val: string) => void;
   onSubmitCreate: () => void;
@@ -1088,6 +1290,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   setSelectedPaths,
   clearSelection,
   deleteSelectedNodes,
+  onRowMouseDown,
+  justDraggedRef,
+  pointerDrag,
   onDragStart,
   onDragEnd,
   onFolderDragOver,
@@ -1115,8 +1320,11 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   const isRenaming = renamingPath === node.path;
 
   const isSelected = selectedPaths.includes(node.path);
-  const isBeingDragged = draggedPaths.includes(node.path);
-  const isDropTarget = node.is_dir && dragOverFolderPath === node.path;
+  const isBeingDragged =
+    draggedPaths.includes(node.path) || (pointerDrag?.items.includes(node.path) ?? false);
+  const isDropTarget =
+    node.is_dir &&
+    (dragOverFolderPath === node.path || pointerDrag?.targetFolder === node.path);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1141,14 +1349,18 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     return (
       <div className="space-y-0.5">
         <div
+          data-droptarget="folder"
+          data-targetpath={node.path}
           draggable={!isRenaming}
           style={{ WebkitUserDrag: !isRenaming ? 'element' : 'none' } as React.CSSProperties}
+          onMouseDown={(e) => onRowMouseDown(e, node.path)}
           onDragStart={(e) => onDragStart(e, node.path)}
           onDragEnd={onDragEnd}
           onDragOver={(e) => onFolderDragOver(e, node.path)}
           onDragLeave={(e) => onFolderDragLeave(e, node.path)}
           onDrop={(e) => onFolderDrop(e, node.path)}
           onClick={(e) => {
+            if (justDraggedRef.current) return;
             if (isRenaming) return;
             const isCtrlOrCmd = e.ctrlKey || e.metaKey;
             const isShift = e.shiftKey;
@@ -1190,13 +1402,14 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]'
           }`}
         >
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 pointer-events-none">
             <span
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleFolder(node.path);
               }}
-              className="text-[#6B7280] hover:text-[#F3F4F6] p-0.5 rounded shrink-0 transition-transform duration-150 ease-out"
+              className="text-[#6B7280] hover:text-[#F3F4F6] p-0.5 rounded shrink-0 transition-transform duration-150 ease-out pointer-events-auto"
               title={isExpanded ? 'Comprimi cartella' : 'Espandi cartella'}
             >
               <ChevronRight
@@ -1215,6 +1428,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 ref={renameInputRef}
                 type="text"
                 value={renamingName}
+                onMouseDown={(e) => e.stopPropagation()}
                 onChange={(e) => setRenamingName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') onSubmitRename();
@@ -1222,7 +1436,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 }}
                 onBlur={onSubmitRename}
                 onClick={(e) => e.stopPropagation()}
-                className="flex-1 bg-transparent text-xs font-medium focus:outline-none border-b border-[#E5484D] text-[#F3F4F6]"
+                className="flex-1 bg-transparent text-xs font-medium focus:outline-none border-b border-[#E5484D] text-[#F3F4F6] pointer-events-auto"
                 placeholder="Nuovo nome..."
               />
             ) : (
@@ -1232,7 +1446,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
           <div className="flex items-center gap-0.5">
             {isDropTarget && (
-              <span className="text-[10px] font-semibold text-[#FFFFFF] bg-[#E5484D] px-1.5 py-0.5 rounded-full shadow-xs animate-pulse">
+              <span className="text-[10px] font-semibold text-[#FFFFFF] bg-[#E5484D] px-1.5 py-0.5 rounded-full shadow-xs animate-pulse pointer-events-none">
                 Sposta qui
               </span>
             )}
@@ -1240,6 +1454,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             {!isRenaming && (
               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     onStartCreate('file', currentRel);
@@ -1250,6 +1465,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   <FilePlus size={12} strokeWidth={1.5} />
                 </button>
                 <button
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     onStartCreate('folder', currentRel);
@@ -1260,6 +1476,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   <FolderPlus size={12} strokeWidth={1.5} />
                 </button>
                 <button
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     onStartRename(node.path, node.name);
@@ -1270,6 +1487,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   <Pencil size={12} strokeWidth={1.5} />
                 </button>
                 <button
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={async (e) => {
                     e.stopPropagation();
                     const confirmed = await requestConfirm({
@@ -1446,6 +1664,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   setSelectedPaths={setSelectedPaths}
                   clearSelection={clearSelection}
                   deleteSelectedNodes={deleteSelectedNodes}
+                  onRowMouseDown={onRowMouseDown}
+                  justDraggedRef={justDraggedRef}
+                  pointerDrag={pointerDrag}
                   onDragStart={onDragStart}
                   onDragEnd={onDragEnd}
                   onFolderDragOver={onFolderDragOver}
@@ -1467,6 +1688,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             ) : (
               !isCreatingInside && (
                 <div
+                  data-droptarget="folder"
+                  data-targetpath={node.path}
                   onDragOver={(e) => onFolderDragOver(e, node.path)}
                   onDragLeave={(e) => onFolderDragLeave(e, node.path)}
                   onDrop={(e) => onFolderDrop(e, node.path)}
@@ -1493,14 +1716,18 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   return (
     <div className="relative">
       <div
+        data-droptarget="file"
+        data-targetpath={node.path}
         draggable={!isRenaming}
         style={{ WebkitUserDrag: !isRenaming ? 'element' : 'none' } as React.CSSProperties}
+        onMouseDown={(e) => onRowMouseDown(e, node.path)}
         onDragStart={(e) => onDragStart(e, node.path)}
         onDragEnd={onDragEnd}
         onDragOver={(e) => onFileDragOver(e, node.path)}
         onDragLeave={(e) => onFileDragLeave(e, node.path)}
         onDrop={(e) => onFileDrop(e, node.path)}
         onClick={(e) => {
+          if (justDraggedRef.current) return;
           if (isRenaming) return;
           const isCtrlOrCmd = e.ctrlKey || e.metaKey;
           const isShift = e.shiftKey;
@@ -1544,7 +1771,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]'
         }`}
       >
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 pointer-events-none">
           <FileText
             size={13}
             strokeWidth={1.5}
@@ -1557,6 +1784,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               ref={renameInputRef}
               type="text"
               value={renamingName}
+              onMouseDown={(e) => e.stopPropagation()}
               onChange={(e) => setRenamingName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') onSubmitRename();
@@ -1564,7 +1792,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               }}
               onBlur={onSubmitRename}
               onClick={(e) => e.stopPropagation()}
-              className="flex-1 bg-transparent text-xs font-medium focus:outline-none border-b border-[#E5484D] text-[#F3F4F6]"
+              className="flex-1 bg-transparent text-xs font-medium focus:outline-none border-b border-[#E5484D] text-[#F3F4F6] pointer-events-auto"
               placeholder="Nuovo nome..."
             />
           ) : (
@@ -1581,6 +1809,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         {!isRenaming && (
           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 onStartRename(node.path, cleanTitle);
@@ -1591,6 +1820,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               <Pencil size={12} strokeWidth={1.5} />
             </button>
             <button
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={async (e) => {
                 e.stopPropagation();
                 const confirmed = await requestConfirm({
