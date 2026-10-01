@@ -67,6 +67,15 @@ interface VaultState {
   saveTimeoutId: number | null;
   editorWidth: number; // in pixels, or -1 for 100% full width
 
+  // File Tree Multi-Selection & Drag-and-Drop
+  selectedPaths: string[];
+  lastSelectedPath: string | null;
+  setSelectedPaths: (paths: string[]) => void;
+  toggleSelectPath: (path: string, isMulti: boolean, isRange?: boolean, visiblePaths?: string[]) => void;
+  clearSelection: () => void;
+  moveNodes: (sourcePaths: string[], targetFolderPath: string | null) => Promise<boolean>;
+  deleteSelectedNodes: () => Promise<void>;
+
   // Auto-Save Configuration
   autoSaveMode: 'manual' | '2s' | 'on_blur';
   setAutoSaveMode: (mode: 'manual' | '2s' | 'on_blur') => void;
@@ -230,6 +239,22 @@ const APP_FONT_KEY = 'noterip_app_font';
 const EDITOR_FONT_KEY = 'noterip_editor_font';
 const FONT_SIZE_KEY = 'noterip_editor_font_size';
 
+export function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+}
+
+export function getPathBasename(p: string): string {
+  const norm = normalizePath(p);
+  const parts = norm.split('/');
+  return parts[parts.length - 1] || '';
+}
+
+export function getPathDirname(p: string): string {
+  const norm = normalizePath(p);
+  const idx = norm.lastIndexOf('/');
+  return idx !== -1 ? norm.substring(0, idx) : '';
+}
+
 export function applyFonts(appFont: string, editorFont: string, fontSize?: number) {
   const root = document.documentElement;
   if (appFont && appFont.trim()) {
@@ -373,6 +398,8 @@ export const useVaultStore = create<VaultState>((set, get) => {
     lastSyncTime: null,
     sortOption: 'name-asc',
     expandedFolders: {},
+    selectedPaths: [],
+    lastSelectedPath: null,
     saveTimeoutId: null,
     editorWidth: getInitialEditorWidth(),
     isFlashcardModalOpen: false,
@@ -554,6 +581,8 @@ export const useVaultStore = create<VaultState>((set, get) => {
           isDirty: false,
           isSaving: false,
           saveError: null,
+          selectedPaths: [path],
+          lastSelectedPath: path,
         });
       } catch (err) {
         console.error('Failed to read note:', err);
@@ -822,17 +851,19 @@ export const useVaultStore = create<VaultState>((set, get) => {
     },
 
     renameNote: async (oldPath: string, newName: string) => {
-      const { vaultPath, activeNotePath } = get();
+      const { vaultPath, activeNotePath, selectedPaths } = get();
       if (!vaultPath) return;
 
       try {
         // Build new path: same directory, new filename
         const separator = oldPath.includes('\\') ? '\\' : '/';
         const parts = oldPath.split(separator);
-        const oldExt = parts[parts.length - 1].match(/\.[^.]+$/)?.[0] || '.md';
+        const oldName = parts[parts.length - 1];
+        const hasExt = oldName.includes('.');
+        const oldExt = hasExt ? (oldName.match(/\.[^.]+$/)?.[0] || '.md') : '';
         const cleanName = newName.trim().replace(/\.(md|markdown|txt)$/i, '');
         if (!cleanName) return;
-        parts[parts.length - 1] = `${cleanName}${oldExt}`;
+        parts[parts.length - 1] = hasExt ? `${cleanName}${oldExt}` : cleanName;
         const newPath = parts.join(separator);
 
         if (newPath === oldPath) return;
@@ -844,9 +875,270 @@ export const useVaultStore = create<VaultState>((set, get) => {
         if (activeNotePath === oldPath) {
           await get().selectNote(newPath);
         }
+
+        // Migrate selection if oldPath was selected
+        if (selectedPaths.includes(oldPath)) {
+          set({
+            selectedPaths: selectedPaths.map((p) => (p === oldPath ? newPath : p)),
+            lastSelectedPath: newPath,
+          });
+        }
       } catch (err) {
         console.error('Failed to rename note:', err);
       }
+    },
+
+    setSelectedPaths: (paths: string[]) => {
+      set({ selectedPaths: paths, lastSelectedPath: paths[paths.length - 1] || null });
+    },
+
+    clearSelection: () => {
+      set({ selectedPaths: [], lastSelectedPath: null });
+    },
+
+    toggleSelectPath: (path: string, isMulti: boolean, isRange?: boolean, visiblePaths?: string[]) => {
+      const { selectedPaths, lastSelectedPath } = get();
+
+      if (isRange && lastSelectedPath && visiblePaths && visiblePaths.length > 0) {
+        const lastIdx = visiblePaths.indexOf(lastSelectedPath);
+        const currIdx = visiblePaths.indexOf(path);
+        if (lastIdx !== -1 && currIdx !== -1) {
+          const start = Math.min(lastIdx, currIdx);
+          const end = Math.max(lastIdx, currIdx);
+          const rangeSlice = visiblePaths.slice(start, end + 1);
+          const combined = Array.from(new Set([...(isMulti ? selectedPaths : []), ...rangeSlice]));
+          set({ selectedPaths: combined, lastSelectedPath: path });
+          return;
+        }
+      }
+
+      if (isMulti) {
+        if (selectedPaths.includes(path)) {
+          set({
+            selectedPaths: selectedPaths.filter((p) => p !== path),
+            lastSelectedPath: path,
+          });
+        } else {
+          set({
+            selectedPaths: [...selectedPaths, path],
+            lastSelectedPath: path,
+          });
+        }
+      } else {
+        set({
+          selectedPaths: [path],
+          lastSelectedPath: path,
+        });
+      }
+    },
+
+    moveNodes: async (sourcePaths: string[], targetFolderPath: string | null) => {
+      const { vaultPath, activeNotePath, fileTree, showToast, loadVault } = get();
+      if (!vaultPath || sourcePaths.length === 0) return false;
+
+      const normVault = normalizePath(vaultPath);
+      const isTargetRoot = !targetFolderPath || normalizePath(targetFolderPath) === normVault;
+      const targetDir = isTargetRoot ? normVault : normalizePath(targetFolderPath);
+
+      const separator = vaultPath.includes('\\') ? '\\' : '/';
+
+      // 1. Filter out redundant children if their ancestor folder is also in sourcePaths
+      const filteredSources = sourcePaths.filter((path) => {
+        const norm = normalizePath(path);
+        return !sourcePaths.some((other) => {
+          if (other === path) return false;
+          const normOther = normalizePath(other);
+          return norm.startsWith(normOther + '/');
+        });
+      });
+
+      if (filteredSources.length === 0) return false;
+
+      // 2. Validate that we're not moving a directory into itself or one of its descendants
+      for (const src of filteredSources) {
+        const normSrc = normalizePath(src);
+        if (targetDir === normSrc || targetDir.startsWith(normSrc + '/')) {
+          showToast('Impossibile spostare una cartella all\'interno di se stessa o di una sua sottocartella.', 'error');
+          return false;
+        }
+      }
+
+      // Collect all existing paths in the vault for collision avoidance
+      const existingPaths = new Set<string>();
+      function collectPaths(nodes: FileNode[]) {
+        for (const n of nodes) {
+          existingPaths.add(normalizePath(n.path).toLowerCase());
+          if (n.children) collectPaths(n.children);
+        }
+      }
+      collectPaths(fileTree);
+
+      let movedCount = 0;
+      let nextActivePath: string | null = activeNotePath;
+      const updatedExpanded: Record<string, boolean> = { ...get().expandedFolders };
+      const newlyMovedPaths: string[] = [];
+
+      for (const src of filteredSources) {
+        const normSrc = normalizePath(src);
+        const parentDir = getPathDirname(normSrc);
+
+        // Already directly inside destination folder
+        if (parentDir === targetDir) {
+          continue;
+        }
+
+        const baseName = getPathBasename(normSrc);
+        if (!baseName) continue;
+
+        let isDir = false;
+        function checkIsDir(nodes: FileNode[]): boolean {
+          for (const n of nodes) {
+            if (normalizePath(n.path) === normSrc) return n.is_dir;
+            if (n.children && checkIsDir(n.children)) return true;
+          }
+          return false;
+        }
+        isDir = checkIsDir(fileTree);
+
+        const dotIdx = isDir ? -1 : baseName.lastIndexOf('.');
+        const rawName = dotIdx > 0 ? baseName.substring(0, dotIdx) : baseName;
+        const ext = dotIdx > 0 ? baseName.substring(dotIdx) : '';
+
+        let candidateName = baseName;
+        let candidateNormPath = `${targetDir}/${candidateName}`;
+        let counter = 1;
+        while (existingPaths.has(candidateNormPath.toLowerCase()) && candidateNormPath.toLowerCase() !== normSrc.toLowerCase()) {
+          candidateName = `${rawName} (${counter})${ext}`;
+          candidateNormPath = `${targetDir}/${candidateName}`;
+          counter++;
+        }
+
+        const formattedTargetDir = isTargetRoot ? vaultPath : targetFolderPath!;
+        const cleanDir = formattedTargetDir.replace(/[/\\]+$/, '');
+        const targetSep = formattedTargetDir.includes('\\') ? '\\' : separator;
+        const newPath = `${cleanDir}${targetSep}${candidateName}`;
+
+        if (newPath === src) continue;
+
+        try {
+          await tauriBridge.renameNote(src, newPath);
+          movedCount++;
+          newlyMovedPaths.push(newPath);
+          existingPaths.add(candidateNormPath.toLowerCase());
+
+          // Track active note relocation
+          if (nextActivePath) {
+            const normActive = normalizePath(nextActivePath);
+            if (normActive === normSrc) {
+              nextActivePath = newPath;
+            } else if (normActive.startsWith(normSrc + '/')) {
+              const relSuffix = normActive.slice(normSrc.length);
+              const formattedRel = targetSep === '\\' ? relSuffix.replace(/\//g, '\\') : relSuffix;
+              nextActivePath = `${newPath}${formattedRel}`;
+            }
+          }
+
+          // Migrate expanded folder state
+          if (updatedExpanded[src]) {
+            delete updatedExpanded[src];
+            updatedExpanded[newPath] = true;
+          }
+        } catch (err) {
+          console.error(`Errore durante lo spostamento di "${src}" in "${newPath}":`, err);
+          showToast(`Errore durante lo spostamento di "${baseName}": ${err instanceof Error ? err.message : String(err)}`, 'error');
+        }
+      }
+
+      if (movedCount > 0) {
+        if (!isTargetRoot && targetFolderPath) {
+          updatedExpanded[targetFolderPath] = true;
+        }
+
+        set({ expandedFolders: updatedExpanded });
+        await loadVault(vaultPath);
+
+        if (nextActivePath && nextActivePath !== activeNotePath) {
+          await get().selectNote(nextActivePath);
+        }
+
+        set({
+          selectedPaths: newlyMovedPaths,
+          lastSelectedPath: newlyMovedPaths[0] || null,
+        });
+
+        const destName = isTargetRoot
+          ? 'cartella principale'
+          : getPathBasename(targetDir);
+
+        showToast(
+          movedCount === 1
+            ? `Elemento spostato in "${destName}"`
+            : `${movedCount} elementi spostati in "${destName}"`,
+          'success'
+        );
+        return true;
+      }
+
+      return false;
+    },
+
+    deleteSelectedNodes: async () => {
+      const { selectedPaths, vaultPath, loadVault, activeNotePath, requestConfirm, showToast } = get();
+      if (!vaultPath || selectedPaths.length === 0) return;
+
+      const count = selectedPaths.length;
+      const isMultiple = count > 1;
+
+      const confirmed = await requestConfirm({
+        title: isMultiple ? 'Elimina Elementi Selezionati' : 'Elimina Elemento',
+        message: isMultiple
+          ? `Eliminare definitivamente i ${count} elementi selezionati (note e/o cartelle) e tutto il loro contenuto?`
+          : 'Eliminare definitivamente questo elemento e il suo contenuto?',
+        confirmLabel: isMultiple ? `Elimina (${count})` : 'Elimina',
+        isDanger: true,
+      });
+
+      if (!confirmed) return;
+
+      const filtered = selectedPaths.filter((path) => {
+        const norm = normalizePath(path);
+        return !selectedPaths.some((other) => {
+          if (other === path) return false;
+          const normOther = normalizePath(other);
+          return norm.startsWith(normOther + '/');
+        });
+      });
+
+      let deletedCount = 0;
+      let activeWasDeleted = false;
+
+      for (const p of filtered) {
+        try {
+          await tauriBridge.deleteNote(p);
+          deletedCount++;
+          const normP = normalizePath(p);
+          if (activeNotePath) {
+            const normActive = normalizePath(activeNotePath);
+            if (normActive === normP || normActive.startsWith(normP + '/')) {
+              activeWasDeleted = true;
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to delete "${p}":`, err);
+        }
+      }
+
+      set({ selectedPaths: [], lastSelectedPath: null });
+      if (activeWasDeleted) {
+        set({ activeNotePath: null, activeNoteContent: '', isDirty: false });
+      }
+
+      await loadVault(vaultPath);
+
+      showToast(
+        deletedCount === 1 ? 'Elemento eliminato' : `${deletedCount} elementi eliminati`,
+        'info'
+      );
     },
 
     navigateToWikiLink: async (targetName: string) => {

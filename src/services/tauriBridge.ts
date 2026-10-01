@@ -483,8 +483,17 @@ export const tauriBridge = {
     }
 
     const data = getMockData();
-    const rel = filePath.replace(`${data.vaultPath}/`, '').replace(/^\//, '');
+    const normVault = data.vaultPath.replace(/\\/g, '/').replace(/\/$/, '');
+    const normFile = filePath.replace(/\\/g, '/');
+    const rel = normFile.replace(normVault, '').replace(/^\//, '');
+    const prefix = rel + '/';
+
     delete data.files[rel];
+    for (const k of Object.keys(data.files)) {
+      if (k.startsWith(prefix)) {
+        delete data.files[k];
+      }
+    }
     saveMockData(data);
   },
 
@@ -495,13 +504,27 @@ export const tauriBridge = {
     }
 
     const data = getMockData();
-    const oldRel = oldPath.replace(`${data.vaultPath}/`, '').replace(/^\//, '');
-    const newRel = newPath.replace(`${data.vaultPath}/`, '').replace(/^\//, '');
-    if (data.files[oldRel] !== undefined) {
-      data.files[newRel] = data.files[oldRel];
-      delete data.files[oldRel];
-      saveMockData(data);
+    const normVault = data.vaultPath.replace(/\\/g, '/').replace(/\/$/, '');
+    const normOld = oldPath.replace(/\\/g, '/');
+    const normNew = newPath.replace(/\\/g, '/');
+    const oldRel = normOld.replace(normVault, '').replace(/^\//, '');
+    const newRel = normNew.replace(normVault, '').replace(/^\//, '');
+    const oldPrefix = oldRel + '/';
+    const newPrefix = newRel + '/';
+
+    const updatedFiles: Record<string, string> = {};
+    for (const [k, v] of Object.entries(data.files)) {
+      if (k === oldRel) {
+        updatedFiles[newRel] = v;
+      } else if (k.startsWith(oldPrefix)) {
+        const rest = k.slice(oldPrefix.length);
+        updatedFiles[`${newPrefix}${rest}`] = v;
+      } else {
+        updatedFiles[k] = v;
+      }
     }
+    data.files = updatedFiles;
+    saveMockData(data);
   },
 
   async gitSyncVault(vaultPath: string, commitMsg?: string): Promise<GitSyncResult> {

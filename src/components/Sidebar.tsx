@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { useVaultStore } from '../store/useVaultStore';
+import {
+  useVaultStore,
+  normalizePath,
+  getPathDirname,
+} from '../store/useVaultStore';
 import type { FileSortOption } from '../store/useVaultStore';
 import type { FileNode } from '../types';
 import {
@@ -43,6 +47,12 @@ export const Sidebar: React.FC = () => {
     expandedFolders,
     isSidebarOpen,
     activeView,
+    selectedPaths,
+    setSelectedPaths,
+    toggleSelectPath,
+    clearSelection,
+    moveNodes,
+    deleteSelectedNodes,
     toggleSidebar,
     openVaultDialog,
     selectNote,
@@ -75,6 +85,13 @@ export const Sidebar: React.FC = () => {
 
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
+  const sidebarContainerRef = useRef<HTMLDivElement>(null);
+
+  // Drag-and-drop state
+  const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
+  const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
+  const [isDragOverRoot, setIsDragOverRoot] = useState(false);
+  const hoverExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Inline rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -97,6 +114,15 @@ export const Sidebar: React.FC = () => {
       createInputRef.current.focus();
     }
   }, [creatingItem]);
+
+  // Clean hover-to-expand timer on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverExpandTimerRef.current) {
+        clearTimeout(hoverExpandTimerRef.current);
+      }
+    };
+  }, []);
 
   const vaultName = useMemo(() => {
     if (!vaultPath) return 'Vault NoteRip';
@@ -173,6 +199,240 @@ export const Sidebar: React.FC = () => {
     return tree;
   }, [fileTree, sortOption, searchTreeQuery]);
 
+  // Compute visible flattened paths for Shift+Click range selection
+  const visiblePaths = useMemo(() => {
+    const paths: string[] = [];
+    function collect(nodes: FileNode[]) {
+      for (const node of nodes) {
+        paths.push(node.path);
+        if (node.is_dir && expandedFolders[node.path] && node.children) {
+          collect(node.children);
+        }
+      }
+    }
+    collect(processedTree);
+    return paths;
+  }, [processedTree, expandedFolders]);
+
+  // Keyboard shortcuts listener for sidebar operations (Delete, Esc, Ctrl+A)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isEditing =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          (activeEl as HTMLElement).isContentEditable);
+      if (isEditing) return;
+
+      if (e.key === 'Escape') {
+        if (selectedPaths.length > 0) {
+          clearSelection();
+        }
+      } else if (e.key === 'Delete' || (e.key === 'Backspace' && (e.metaKey || e.ctrlKey))) {
+        if (selectedPaths.length > 0) {
+          e.preventDefault();
+          deleteSelectedNodes();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        if (sidebarContainerRef.current && sidebarContainerRef.current.contains(activeEl)) {
+          e.preventDefault();
+          setSelectedPaths(visiblePaths);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPaths, visiblePaths, clearSelection, deleteSelectedNodes, setSelectedPaths]);
+
+  // Drag and drop validation: can items drop into this folder?
+  const canDropInFolder = (sources: string[], targetFolderPath: string) => {
+    if (!sources || sources.length === 0) return false;
+    const normTarget = normalizePath(targetFolderPath);
+
+    for (const src of sources) {
+      const normSrc = normalizePath(src);
+      if (normTarget === normSrc) return false;
+      if (normTarget.startsWith(normSrc + '/')) return false;
+    }
+
+    const allAlreadyInside = sources.every((src) => {
+      const parent = getPathDirname(normalizePath(src));
+      return parent === normTarget;
+    });
+
+    return !allAlreadyInside;
+  };
+
+  // Drag and drop validation: can items drop on vault root?
+  const canDropOnRoot = useMemo(() => {
+    if (!vaultPath || draggedPaths.length === 0) return false;
+    const normVault = normalizePath(vaultPath);
+
+    return draggedPaths.some((src) => {
+      const parent = getPathDirname(normalizePath(src));
+      return parent !== normVault;
+    });
+  }, [vaultPath, draggedPaths]);
+
+  // Drag Start handler
+  const handleDragStart = (e: React.DragEvent, nodePath: string) => {
+    e.stopPropagation();
+
+    let pathsToDrag = selectedPaths;
+    if (!selectedPaths.includes(nodePath)) {
+      pathsToDrag = [nodePath];
+      setSelectedPaths([nodePath]);
+    }
+
+    setDraggedPaths(pathsToDrag);
+    e.dataTransfer.setData('application/json', JSON.stringify(pathsToDrag));
+    e.dataTransfer.setData('text/plain', pathsToDrag.join('\n'));
+    e.dataTransfer.effectAllowed = 'move';
+
+    // Ghost drag image if multiple items
+    if (pathsToDrag.length > 1) {
+      const ghost = document.createElement('div');
+      ghost.style.position = 'absolute';
+      ghost.style.top = '-9999px';
+      ghost.style.left = '-9999px';
+      ghost.style.padding = '5px 10px';
+      ghost.style.borderRadius = '8px';
+      ghost.style.backgroundColor = '#171B22';
+      ghost.style.color = '#F3F4F6';
+      ghost.style.border = '1px solid #E5484D';
+      ghost.style.fontSize = '11px';
+      ghost.style.fontWeight = '600';
+      ghost.style.display = 'flex';
+      ghost.style.alignItems = 'center';
+      ghost.style.gap = '6px';
+      ghost.style.zIndex = '99999';
+      ghost.style.boxShadow = '0 6px 16px rgba(0,0,0,0.6)';
+      ghost.textContent = `📁 ${pathsToDrag.length} elementi`;
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 15, 15);
+      setTimeout(() => {
+        if (document.body.contains(ghost)) {
+          document.body.removeChild(ghost);
+        }
+      }, 0);
+    }
+  };
+
+  // Drag End handler
+  const handleDragEnd = () => {
+    setDraggedPaths([]);
+    setDragOverFolderPath(null);
+    setIsDragOverRoot(false);
+    if (hoverExpandTimerRef.current) {
+      clearTimeout(hoverExpandTimerRef.current);
+      hoverExpandTimerRef.current = null;
+    }
+  };
+
+  // Folder Drag Over
+  const handleFolderDragOver = (e: React.DragEvent, folderPath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sources = draggedPaths.length > 0 ? draggedPaths : [];
+    if (sources.length > 0 && !canDropInFolder(sources, folderPath)) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverFolderPath !== folderPath) {
+      setDragOverFolderPath(folderPath);
+
+      // Auto-expand folder on hover if collapsed
+      if (hoverExpandTimerRef.current) clearTimeout(hoverExpandTimerRef.current);
+      if (!expandedFolders[folderPath]) {
+        hoverExpandTimerRef.current = setTimeout(() => {
+          useVaultStore.getState().setFolderExpanded(folderPath, true);
+        }, 600);
+      }
+    }
+  };
+
+  // Folder Drag Leave
+  const handleFolderDragLeave = (e: React.DragEvent, folderPath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragOverFolderPath === folderPath) {
+      setDragOverFolderPath(null);
+      if (hoverExpandTimerRef.current) {
+        clearTimeout(hoverExpandTimerRef.current);
+        hoverExpandTimerRef.current = null;
+      }
+    }
+  };
+
+  // Folder Drop
+  const handleFolderDrop = async (e: React.DragEvent, folderPath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolderPath(null);
+    if (hoverExpandTimerRef.current) {
+      clearTimeout(hoverExpandTimerRef.current);
+      hoverExpandTimerRef.current = null;
+    }
+
+    let items = draggedPaths;
+    if (items.length === 0) {
+      try {
+        const raw = e.dataTransfer.getData('application/json');
+        if (raw) items = JSON.parse(raw);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (items && items.length > 0 && canDropInFolder(items, folderPath)) {
+      await moveNodes(items, folderPath);
+    }
+    setDraggedPaths([]);
+  };
+
+  // Root Drag Over
+  const handleRootDragOver = (e: React.DragEvent) => {
+    if (!canDropOnRoot) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setIsDragOverRoot(true);
+  };
+
+  // Root Drag Leave
+  const handleRootDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverRoot(false);
+  };
+
+  // Root Drop
+  const handleRootDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverRoot(false);
+
+    let items = draggedPaths;
+    if (items.length === 0) {
+      try {
+        const raw = e.dataTransfer.getData('application/json');
+        if (raw) items = JSON.parse(raw);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (items && items.length > 0) {
+      await moveNodes(items, null);
+    }
+    setDraggedPaths([]);
+  };
+
   const handleStartCreate = (type: 'file' | 'folder', parentFolderRel?: string) => {
     setCreatingItem({ type, parentFolderRel });
     setCreateInputName('');
@@ -205,6 +465,7 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside
+      ref={sidebarContainerRef}
       className={`h-full flex flex-col bg-[#131720] border-r border-[#272C36] select-none transition-all duration-200 ease-in-out shrink-0 overflow-hidden relative ${
         isSidebarOpen ? 'w-64 md:w-72' : 'w-0 border-r-0 opacity-0 pointer-events-none'
       }`}
@@ -320,9 +581,16 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* 2. Main Middle Area: Notebooks File Tree + Tags */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+      <div
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            clearSelection();
+          }
+        }}
+        className="flex-1 flex flex-col overflow-y-auto px-2 py-3 space-y-4"
+      >
         {/* Notebooks / Files Section Header */}
-        <div>
+        <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between px-2 pb-1 text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
             <span>Taccuini & File</span>
             <div className="flex items-center gap-1 text-[#9CA3AF]">
@@ -428,6 +696,50 @@ export const Sidebar: React.FC = () => {
             </div>
           )}
 
+          {/* Multi-Selection Status & Batch Actions Bar */}
+          {selectedPaths.length > 1 && (
+            <div className="mx-1 mb-2 px-2.5 py-1.5 rounded-xl bg-[#171B22] border border-[#E5484D]/40 flex items-center justify-between shadow-apple-sm animate-in fade-in duration-150">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-[#E5484D] animate-pulse shrink-0" />
+                <span className="text-xs font-semibold text-[#F3F4F6] truncate">
+                  {selectedPaths.length} elementi selezionati
+                </span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => deleteSelectedNodes()}
+                  className="p-1 rounded text-[#9CA3AF] hover:text-[#E5484D] hover:bg-[#E5484D]/10 transition-colors"
+                  title="Elimina tutti gli elementi selezionati (Canc)"
+                >
+                  <Trash2 size={13} strokeWidth={1.5} />
+                </button>
+                <button
+                  onClick={() => clearSelection()}
+                  className="p-1 rounded text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#272C36] transition-colors"
+                  title="Deseleziona tutti (Esc)"
+                >
+                  <X size={13} strokeWidth={1.5} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Root Drop Zone Banner (shown during drag if items can be moved to root) */}
+          {draggedPaths.length > 0 && canDropOnRoot && (
+            <div
+              onDragOver={handleRootDragOver}
+              onDragLeave={handleRootDragLeave}
+              onDrop={handleRootDrop}
+              className={`mx-1 mb-2 py-2 px-3 rounded-xl border border-dashed text-xs text-center font-medium transition-all cursor-pointer ${
+                isDragOverRoot
+                  ? 'bg-[#E5484D]/25 border-[#E5484D] text-[#FFFFFF] ring-2 ring-[#E5484D]/50 shadow-md scale-[1.01]'
+                  : 'bg-[#171B22]/80 border-[#272C36] text-[#9CA3AF] hover:border-[#E5484D]/60 hover:text-[#F3F4F6]'
+              }`}
+            >
+              <span>📥 Sposta nella cartella principale (Root)</span>
+            </div>
+          )}
+
           {/* Root inline creation */}
           {creatingItem && !creatingItem.parentFolderRel && (
             <div className="flex items-center gap-1.5 p-1.5 rounded-xl bg-[#171B22] border border-[#E5484D] my-1">
@@ -485,9 +797,12 @@ export const Sidebar: React.FC = () => {
                   node={node}
                   depth={0}
                   parentRel=""
-                  vaultPath={vaultPath || ''}
                   activeNotePath={activeNotePath}
                   expandedFolders={expandedFolders}
+                  selectedPaths={selectedPaths}
+                  visiblePaths={visiblePaths}
+                  draggedPaths={draggedPaths}
+                  dragOverFolderPath={dragOverFolderPath}
                   creatingItem={creatingItem}
                   createInputName={createInputName}
                   createInputRef={createInputRef}
@@ -497,7 +812,15 @@ export const Sidebar: React.FC = () => {
                   selectNote={selectNote}
                   deleteNote={deleteNote}
                   deleteFolder={deleteFolder}
-                  renameNote={renameNote}
+                  toggleSelectPath={toggleSelectPath}
+                  setSelectedPaths={setSelectedPaths}
+                  clearSelection={clearSelection}
+                  deleteSelectedNodes={deleteSelectedNodes}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  onFolderDragOver={handleFolderDragOver}
+                  onFolderDragLeave={handleFolderDragLeave}
+                  onFolderDrop={handleFolderDrop}
                   onStartCreate={handleStartCreate}
                   setCreateInputName={setCreateInputName}
                   onSubmitCreate={handleSubmitCreate}
@@ -522,6 +845,29 @@ export const Sidebar: React.FC = () => {
               ))
             )}
           </div>
+
+          {/* Empty Space at Bottom of Tree (allows clicking to deselect or dropping to root) */}
+          <div
+            className="flex-1 min-h-[60px]"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                clearSelection();
+              }
+            }}
+            onDragOver={(e) => {
+              if (canDropOnRoot) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setIsDragOverRoot(true);
+              }
+            }}
+            onDragLeave={() => setIsDragOverRoot(false)}
+            onDrop={async (e) => {
+              if (canDropOnRoot) {
+                await handleRootDrop(e);
+              }
+            }}
+          />
         </div>
       </div>
 
@@ -575,9 +921,12 @@ interface TreeNodeProps {
   node: FileNode;
   depth: number;
   parentRel: string;
-  vaultPath: string;
   activeNotePath: string | null;
   expandedFolders: Record<string, boolean>;
+  selectedPaths: string[];
+  visiblePaths: string[];
+  draggedPaths: string[];
+  dragOverFolderPath: string | null;
   creatingItem: { type: 'file' | 'folder'; parentFolderRel?: string } | null;
   createInputName: string;
   createInputRef: React.RefObject<HTMLInputElement | null>;
@@ -587,7 +936,15 @@ interface TreeNodeProps {
   selectNote: (path: string) => void;
   deleteNote: (path: string) => void;
   deleteFolder: (path: string) => void;
-  renameNote: (oldPath: string, newName: string) => Promise<void>;
+  toggleSelectPath: (path: string, isMulti: boolean, isRange?: boolean, visiblePaths?: string[]) => void;
+  setSelectedPaths: (paths: string[]) => void;
+  clearSelection: () => void;
+  deleteSelectedNodes: () => Promise<void>;
+  onDragStart: (e: React.DragEvent, path: string) => void;
+  onDragEnd: () => void;
+  onFolderDragOver: (e: React.DragEvent, path: string) => void;
+  onFolderDragLeave: (e: React.DragEvent, path: string) => void;
+  onFolderDrop: (e: React.DragEvent, path: string) => void;
   onStartCreate: (type: 'file' | 'folder', parentFolderRel?: string) => void;
   setCreateInputName: (val: string) => void;
   onSubmitCreate: () => void;
@@ -602,9 +959,12 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   node,
   depth,
   parentRel,
-  vaultPath,
   activeNotePath,
   expandedFolders,
+  selectedPaths,
+  visiblePaths,
+  draggedPaths,
+  dragOverFolderPath,
   creatingItem,
   createInputName,
   createInputRef,
@@ -614,7 +974,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   selectNote,
   deleteNote,
   deleteFolder,
-  renameNote,
+  toggleSelectPath,
+  setSelectedPaths,
+  clearSelection,
+  deleteSelectedNodes,
+  onDragStart,
+  onDragEnd,
+  onFolderDragOver,
+  onFolderDragLeave,
+  onFolderDrop,
   onStartCreate,
   setCreateInputName,
   onSubmitCreate,
@@ -632,6 +1000,10 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   const currentRel = parentRel ? `${parentRel}/${node.name}` : node.name;
   const isCreatingInside = creatingItem && creatingItem.parentFolderRel === currentRel;
   const isRenaming = renamingPath === node.path;
+
+  const isSelected = selectedPaths.includes(node.path);
+  const isBeingDragged = draggedPaths.includes(node.path);
+  const isDropTarget = node.is_dir && dragOverFolderPath === node.path;
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -651,68 +1023,250 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     }
   }, [isRenaming]);
 
+  // FOLDER NODE
   if (node.is_dir) {
     return (
       <div className="space-y-0.5">
         <div
-          onClick={() => toggleFolder(node.path)}
+          draggable={!isRenaming}
+          onDragStart={(e) => onDragStart(e, node.path)}
+          onDragEnd={onDragEnd}
+          onDragOver={(e) => onFolderDragOver(e, node.path)}
+          onDragLeave={(e) => onFolderDragLeave(e, node.path)}
+          onDrop={(e) => onFolderDrop(e, node.path)}
+          onClick={(e) => {
+            if (isRenaming) return;
+            const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+            const isShift = e.shiftKey;
+
+            if (isCtrlOrCmd) {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleSelectPath(node.path, true, false);
+              return;
+            }
+
+            if (isShift) {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleSelectPath(node.path, false, true, visiblePaths);
+              return;
+            }
+
+            toggleSelectPath(node.path, false, false);
+            toggleFolder(node.path);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isSelected) {
+              setSelectedPaths([node.path]);
+            }
+            setContextMenu({ x: e.clientX, y: e.clientY });
+          }}
           className={`group flex items-center justify-between ${
             depth === 0 ? 'px-2' : 'px-1.5'
-          } py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]`}
+          } py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all duration-150 select-none ${
+            isBeingDragged
+              ? 'opacity-40 border border-dashed border-[#E5484D] scale-[0.99]'
+              : isDropTarget
+              ? 'bg-[#E5484D]/25 ring-2 ring-[#E5484D] text-[#FFFFFF] shadow-lg shadow-[#E5484D]/20 scale-[1.01]'
+              : isSelected
+              ? 'bg-[#E5484D]/15 text-[#F3F4F6] border border-[#E5484D]/40 font-semibold shadow-2xs'
+              : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]'
+          }`}
         >
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[#6B7280] shrink-0 transition-transform duration-150 ease-out">
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFolder(node.path);
+              }}
+              className="text-[#6B7280] hover:text-[#F3F4F6] p-0.5 rounded shrink-0 transition-transform duration-150 ease-out"
+              title={isExpanded ? 'Comprimi cartella' : 'Espandi cartella'}
+            >
               <ChevronRight
                 size={13}
                 strokeWidth={1.5}
                 className={`transform transition-transform ${isExpanded ? 'rotate-90 text-[#F3F4F6]' : ''}`}
               />
             </span>
-            <Folder size={13} strokeWidth={1.5} className="text-[#9CA3AF] shrink-0" />
-            <span className="truncate text-xs font-medium">{node.name}</span>
+            <Folder
+              size={13}
+              strokeWidth={1.5}
+              className={`shrink-0 ${isSelected || isDropTarget ? 'text-[#E5484D]' : 'text-[#9CA3AF]'}`}
+            />
+            {isRenaming ? (
+              <input
+                ref={renameInputRef}
+                type="text"
+                value={renamingName}
+                onChange={(e) => setRenamingName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSubmitRename();
+                  if (e.key === 'Escape') onCancelRename();
+                }}
+                onBlur={onSubmitRename}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 bg-transparent text-xs font-medium focus:outline-none border-b border-[#E5484D] text-[#F3F4F6]"
+                placeholder="Nuovo nome..."
+              />
+            ) : (
+              <span className="truncate text-xs font-medium">{node.name}</span>
+            )}
           </div>
 
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onStartCreate('file', currentRel);
-              }}
-              className="p-1 hover:bg-[#1C212B] rounded text-[#9CA3AF] hover:text-[#F3F4F6]"
-              title={`Nuova nota dentro "${node.name}"`}
-            >
-              <FilePlus size={12} strokeWidth={1.5} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onStartCreate('folder', currentRel);
-              }}
-              className="p-1 hover:bg-[#1C212B] rounded text-[#9CA3AF] hover:text-[#F3F4F6]"
-              title={`Nuova sottocartella`}
-            >
-              <FolderPlus size={12} strokeWidth={1.5} />
-            </button>
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                const confirmed = await requestConfirm({
-                  title: 'Elimina Cartella',
-                  message: `Eliminare la cartella "${node.name}" e tutto il suo contenuto?`,
-                  confirmLabel: 'Elimina Cartella',
-                  isDanger: true,
-                });
-                if (confirmed) {
-                  deleteFolder(node.path);
-                }
-              }}
-              className="p-1 hover:bg-[#E5484D]/20 hover:text-[#E5484D] rounded text-[#6B7280]"
-              title="Elimina cartella"
-            >
-              <Trash2 size={12} strokeWidth={1.5} />
-            </button>
+          <div className="flex items-center gap-0.5">
+            {isDropTarget && (
+              <span className="text-[10px] font-semibold text-[#FFFFFF] bg-[#E5484D] px-1.5 py-0.5 rounded-full shadow-xs animate-pulse">
+                Sposta qui
+              </span>
+            )}
+
+            {!isRenaming && (
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStartCreate('file', currentRel);
+                  }}
+                  className="p-1 hover:bg-[#1C212B] rounded text-[#9CA3AF] hover:text-[#F3F4F6]"
+                  title={`Nuova nota dentro "${node.name}"`}
+                >
+                  <FilePlus size={12} strokeWidth={1.5} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStartCreate('folder', currentRel);
+                  }}
+                  className="p-1 hover:bg-[#1C212B] rounded text-[#9CA3AF] hover:text-[#F3F4F6]"
+                  title="Nuova sottocartella"
+                >
+                  <FolderPlus size={12} strokeWidth={1.5} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStartRename(node.path, node.name);
+                  }}
+                  className="p-1 hover:bg-[#1C212B] rounded text-[#6B7280] hover:text-[#F3F4F6]"
+                  title="Rinomina cartella"
+                >
+                  <Pencil size={12} strokeWidth={1.5} />
+                </button>
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const confirmed = await requestConfirm({
+                      title: 'Elimina Cartella',
+                      message: `Eliminare la cartella "${node.name}" e tutto il suo contenuto?`,
+                      confirmLabel: 'Elimina Cartella',
+                      isDanger: true,
+                    });
+                    if (confirmed) {
+                      deleteFolder(node.path);
+                    }
+                  }}
+                  className="p-1 hover:bg-[#E5484D]/20 hover:text-[#E5484D] rounded text-[#6B7280]"
+                  title="Elimina cartella"
+                >
+                  <Trash2 size={12} strokeWidth={1.5} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Folder Context Menu */}
+        {contextMenu && (
+          <div
+            ref={contextMenuRef}
+            className="fixed z-[999] min-w-[170px] rounded-xl shadow-popover border border-[#272C36] p-1 text-xs bg-[#171B22] animate-in fade-in zoom-in-95 duration-100"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {selectedPaths.length > 1 && isSelected ? (
+              <>
+                <div className="px-2.5 py-1 text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">
+                  {selectedPaths.length} selezionati
+                </div>
+                <button
+                  onClick={async () => {
+                    setContextMenu(null);
+                    await deleteSelectedNodes();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#E5484D] hover:bg-[#E5484D]/15 transition-colors"
+                >
+                  <Trash2 size={13} strokeWidth={1.5} />
+                  <span>Elimina {selectedPaths.length} elementi</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    clearSelection();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
+                >
+                  <X size={13} strokeWidth={1.5} />
+                  <span>Deseleziona tutti</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    onStartCreate('file', currentRel);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
+                >
+                  <FilePlus size={13} strokeWidth={1.5} className="text-[#9CA3AF]" />
+                  <span>Nuova Nota</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    onStartCreate('folder', currentRel);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
+                >
+                  <FolderPlus size={13} strokeWidth={1.5} className="text-[#9CA3AF]" />
+                  <span>Nuova Sottocartella</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setContextMenu(null);
+                    onStartRename(node.path, node.name);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
+                >
+                  <Pencil size={13} strokeWidth={1.5} className="text-[#9CA3AF]" />
+                  <span>Rinomina</span>
+                </button>
+                <div className="border-t border-[#272C36] my-1" />
+                <button
+                  onClick={async () => {
+                    setContextMenu(null);
+                    const confirmed = await requestConfirm({
+                      title: 'Elimina Cartella',
+                      message: `Eliminare la cartella "${node.name}" e tutto il suo contenuto?`,
+                      confirmLabel: 'Elimina Cartella',
+                      isDanger: true,
+                    });
+                    if (confirmed) {
+                      deleteFolder(node.path);
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#E5484D] hover:bg-[#E5484D]/15 transition-colors"
+                >
+                  <Trash2 size={13} strokeWidth={1.5} />
+                  <span>Elimina</span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {isExpanded && (
           <div className="ml-2.5 pl-2 border-l border-[#272C36] space-y-0.5">
@@ -759,9 +1313,12 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   node={child}
                   depth={depth + 1}
                   parentRel={currentRel}
-                  vaultPath={vaultPath}
                   activeNotePath={activeNotePath}
                   expandedFolders={expandedFolders}
+                  selectedPaths={selectedPaths}
+                  visiblePaths={visiblePaths}
+                  draggedPaths={draggedPaths}
+                  dragOverFolderPath={dragOverFolderPath}
                   creatingItem={creatingItem}
                   createInputName={createInputName}
                   createInputRef={createInputRef}
@@ -771,7 +1328,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   selectNote={selectNote}
                   deleteNote={deleteNote}
                   deleteFolder={deleteFolder}
-                  renameNote={renameNote}
+                  toggleSelectPath={toggleSelectPath}
+                  setSelectedPaths={setSelectedPaths}
+                  clearSelection={clearSelection}
+                  deleteSelectedNodes={deleteSelectedNodes}
+                  onDragStart={onDragStart}
+                  onDragEnd={onDragEnd}
+                  onFolderDragOver={onFolderDragOver}
+                  onFolderDragLeave={onFolderDragLeave}
+                  onFolderDrop={onFolderDrop}
                   onStartCreate={onStartCreate}
                   setCreateInputName={setCreateInputName}
                   onSubmitCreate={onSubmitCreate}
@@ -784,8 +1349,17 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               ))
             ) : (
               !isCreatingInside && (
-                <div className="py-1 px-2 text-[10px] text-[#6B7280] italic">
-                  Cartella vuota
+                <div
+                  onDragOver={(e) => onFolderDragOver(e, node.path)}
+                  onDragLeave={(e) => onFolderDragLeave(e, node.path)}
+                  onDrop={(e) => onFolderDrop(e, node.path)}
+                  className={`py-1.5 px-2 text-[10px] rounded-lg transition-colors border border-dashed ${
+                    isDropTarget
+                      ? 'border-[#E5484D] bg-[#E5484D]/10 text-[#F3F4F6]'
+                      : 'border-transparent text-[#6B7280] italic'
+                  }`}
+                >
+                  {isDropTarget ? 'Rilascia qui per spostare' : 'Cartella vuota (trascina file qui)'}
                 </div>
               )
             )}
@@ -795,23 +1369,56 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     );
   }
 
-  // File Item
+  // FILE NODE
   const isActive = activeNotePath === node.path;
   const cleanTitle = node.name.replace(/\.(md|markdown|txt)$/i, '');
 
   return (
     <div className="relative">
       <div
-        onClick={() => !isRenaming && selectNote(node.path)}
+        draggable={!isRenaming}
+        onDragStart={(e) => onDragStart(e, node.path)}
+        onDragEnd={onDragEnd}
+        onClick={(e) => {
+          if (isRenaming) return;
+          const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+          const isShift = e.shiftKey;
+
+          if (isCtrlOrCmd) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleSelectPath(node.path, true, false);
+            return;
+          }
+
+          if (isShift) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleSelectPath(node.path, false, true, visiblePaths);
+            return;
+          }
+
+          toggleSelectPath(node.path, false, false);
+          selectNote(node.path);
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          if (!isSelected) {
+            setSelectedPaths([node.path]);
+          }
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
         className={`group flex items-center justify-between ${
           depth === 0 ? 'px-2.5' : 'px-2'
-        } py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-          isActive
+        } py-1.5 rounded-lg text-xs cursor-pointer transition-all duration-150 select-none relative ${
+          isBeingDragged
+            ? 'opacity-40 border border-dashed border-[#E5484D] scale-[0.99]'
+            : isSelected
+            ? isActive
+              ? 'bg-[#E5484D]/20 border-l-2 border-[#E5484D] text-[#F3F4F6] font-semibold ring-1 ring-[#E5484D]/30'
+              : 'bg-[#E5484D]/15 text-[#F3F4F6] border border-[#E5484D]/40 font-medium'
+            : isActive
             ? 'bg-[#171B22] border-l-2 border-[#E5484D] text-[#F3F4F6] font-medium'
             : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]'
         }`}
@@ -820,7 +1427,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           <FileText
             size={13}
             strokeWidth={1.5}
-            className={`shrink-0 ${isActive ? 'text-[#E5484D]' : 'text-[#6B7280]'}`}
+            className={`shrink-0 ${
+              isActive || isSelected ? 'text-[#E5484D]' : 'text-[#6B7280]'
+            }`}
           />
           {isRenaming ? (
             <input
@@ -838,7 +1447,11 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               placeholder="Nuovo nome..."
             />
           ) : (
-            <span className={`truncate text-xs ${isActive ? 'text-[#F3F4F6]' : ''}`}>
+            <span
+              className={`truncate text-xs ${
+                isActive || isSelected ? 'text-[#F3F4F6]' : ''
+              }`}
+            >
               {cleanTitle}
             </span>
           )}
@@ -881,37 +1494,69 @@ const TreeNode: React.FC<TreeNodeProps> = ({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[999] min-w-[160px] rounded-xl shadow-popover border border-[#272C36] p-1 text-xs bg-[#171B22]"
+          className="fixed z-[999] min-w-[170px] rounded-xl shadow-popover border border-[#272C36] p-1 text-xs bg-[#171B22] animate-in fade-in zoom-in-95 duration-100"
           style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={() => {
-              setContextMenu(null);
-              onStartRename(node.path, cleanTitle);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
-          >
-            <Pencil size={13} strokeWidth={1.5} />
-            <span>Rinomina</span>
-          </button>
-          <button
-            onClick={async () => {
-              setContextMenu(null);
-              const confirmed = await requestConfirm({
-                title: 'Elimina Nota',
-                message: `Eliminare la nota "${cleanTitle}"?`,
-                confirmLabel: 'Elimina Nota',
-                isDanger: true,
-              });
-              if (confirmed) {
-                deleteNote(node.path);
-              }
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#E5484D] hover:bg-[#E5484D]/15 transition-colors"
-          >
-            <Trash2 size={13} strokeWidth={1.5} />
-            <span>Elimina</span>
-          </button>
+          {selectedPaths.length > 1 && isSelected ? (
+            <>
+              <div className="px-2.5 py-1 text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">
+                {selectedPaths.length} selezionati
+              </div>
+              <button
+                onClick={async () => {
+                  setContextMenu(null);
+                  await deleteSelectedNodes();
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#E5484D] hover:bg-[#E5484D]/15 transition-colors"
+              >
+                <Trash2 size={13} strokeWidth={1.5} />
+                <span>Elimina {selectedPaths.length} elementi</span>
+              </button>
+              <button
+                onClick={() => {
+                  setContextMenu(null);
+                  clearSelection();
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
+              >
+                <X size={13} strokeWidth={1.5} />
+                <span>Deseleziona tutti</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setContextMenu(null);
+                  onStartRename(node.path, cleanTitle);
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#F3F4F6] hover:bg-[#1C212B] transition-colors"
+              >
+                <Pencil size={13} strokeWidth={1.5} className="text-[#9CA3AF]" />
+                <span>Rinomina</span>
+              </button>
+              <div className="border-t border-[#272C36] my-1" />
+              <button
+                onClick={async () => {
+                  setContextMenu(null);
+                  const confirmed = await requestConfirm({
+                    title: 'Elimina Nota',
+                    message: `Eliminare la nota "${cleanTitle}"?`,
+                    confirmLabel: 'Elimina Nota',
+                    isDanger: true,
+                  });
+                  if (confirmed) {
+                    deleteNote(node.path);
+                  }
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[#E5484D] hover:bg-[#E5484D]/15 transition-colors"
+              >
+                <Trash2 size={13} strokeWidth={1.5} />
+                <span>Elimina</span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
