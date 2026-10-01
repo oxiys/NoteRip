@@ -6,10 +6,6 @@ import type { NoteItem } from '../types';
  */
 const WIKILINK_REGEX = /\[\[([^[\]|]+)(?:\|[^[\]]+)?\]\]/g;
 
-/**
- * Regex for tags #tag_name
- */
-const TAG_REGEX = /(?:^|\s)#([a-zA-Z0-9_\-\u00C0-\u017F]+)/g;
 
 /**
  * Extract WikiLinks from note markdown content
@@ -29,19 +25,64 @@ export function extractWikiLinks(content: string): string[] {
   return Array.from(links);
 }
 
+// Reserved programming / C preprocessor directives and syntax words that should never be treated as tags
+const RESERVED_TAG_KEYWORDS = new Set([
+  'include',
+  'define',
+  'undef',
+  'ifdef',
+  'ifndef',
+  'endif',
+  'if',
+  'elif',
+  'else',
+  'error',
+  'warning',
+  'pragma',
+  'line',
+  'import',
+  'using',
+  'region',
+  'endregion',
+]);
+
 /**
  * Extract tags like #university #distributed-systems
+ * Safely strips code blocks, inline code and ignores C/C++ preprocessor directives (#include, #define)
  */
 export function extractTags(content: string): string[] {
+  if (!content) return [];
   const tags = new Set<string>();
-  let match: RegExpExecArray | null;
-  const regex = new RegExp(TAG_REGEX);
 
-  while ((match = regex.exec(content)) !== null) {
-    const tag = match[1].trim();
-    if (tag) {
-      tags.add(tag);
+  // 1. Strip fenced code blocks
+  let cleanContent = content.replace(/```[\s\S]*?```/g, '');
+
+  // 2. Strip inline code
+  cleanContent = cleanContent.replace(/`[^`\n]+`/g, '');
+
+  // 3. Strip HTML comments
+  cleanContent = cleanContent.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 4. Match tags: must begin with letter or unicode, followed by alphanum, not followed by < or "
+  const tagRegex = /(?:^|[^\w#])#([a-zA-Z\u00C0-\u017F][a-zA-Z0-9_\-\u00C0-\u017F]*)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRegex.exec(cleanContent)) !== null) {
+    const rawTag = match[1].trim();
+    const lower = rawTag.toLowerCase();
+
+    // Ignore C/C++ preprocessor directives and reserved words
+    if (RESERVED_TAG_KEYWORDS.has(lower)) {
+      continue;
     }
+
+    // Ignore if line looks like C preprocessor (e.g. #include <stdio.h> or #include "header.h")
+    const afterMatch = cleanContent.slice(match.index + match[0].length);
+    if (/^\s*[<"]/.test(afterMatch)) {
+      continue;
+    }
+
+    tags.add(rawTag);
   }
 
   return Array.from(tags);

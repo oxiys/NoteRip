@@ -111,6 +111,7 @@ export const SmartQAModal: React.FC = () => {
     activeNotePath,
     notes,
     addFlashcard,
+    showToast,
   } = useVaultStore();
 
   const [question, setQuestion] = useState('');
@@ -269,7 +270,7 @@ export const SmartQAModal: React.FC = () => {
 
   const handleInsertIntoNote = () => {
     if (!activeNotePath) {
-      alert('Apri prima una nota nell\'editor per inserire la risposta.');
+      showToast("Apri prima una nota nell'editor per inserire la risposta.", 'error');
       return;
     }
     const answer = generativeAnswer || qaResult?.directAnswer || '';
@@ -287,7 +288,7 @@ export const SmartQAModal: React.FC = () => {
   const handleConvertToFlashcard = async () => {
     const answer = (qaResult?.directAnswer || generativeAnswer || '').trim();
     if (!question.trim() || !answer) {
-      alert('Non c\'è una domanda o risposta valida da convertire in flashcard.');
+      showToast("Non c'è una domanda o risposta valida da convertire in flashcard.", 'error');
       return;
     }
 
@@ -302,7 +303,7 @@ export const SmartQAModal: React.FC = () => {
       noteTitle: currentNote?.title,
     });
 
-    alert(`Flashcard creata con successo nel mazzo "${targetDeck}"! Puoi ripassarla nella sezione Flashcards.`);
+    showToast(`Flashcard creata con successo nel mazzo "${targetDeck}"!`, "success");
   };
 
   if (!isSmartQAModalOpen) return null;

@@ -19,10 +19,10 @@ import {
   Folder,
   Brain,
   Pencil,
-  Hash,
   Sparkles,
   BookOpen,
 } from 'lucide-react';
+import { detectCloudDrive } from '../services/cloudDriveDetector';
 
 const SORT_OPTIONS: { id: FileSortOption; label: string; desc: string }[] = [
   { id: 'name-asc', label: 'Nome (A - Z)', desc: 'Ordine alfabetico naturale' },
@@ -60,8 +60,6 @@ export const Sidebar: React.FC = () => {
     flashcards,
     openSmartQAModal,
     renameNote,
-    selectedTag,
-    setSelectedTag,
   } = useVaultStore();
 
   const [searchTreeQuery, setSearchTreeQuery] = useState('');
@@ -107,20 +105,8 @@ export const Sidebar: React.FC = () => {
     return parts[parts.length - 1] || 'Vault';
   }, [vaultPath]);
 
-  // Aggregate all tags across all notes with counts
-  const allTagsWithCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const n of notes) {
-      if (n.tags && Array.isArray(n.tags)) {
-        for (const t of n.tags) {
-          map.set(t, (map.get(t) || 0) + 1);
-        }
-      }
-    }
-    return Array.from(map.entries())
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-  }, [notes]);
+  // Detect if vault folder belongs to a cloud drive (Google Drive, OneDrive, Dropbox, etc.)
+  const cloudDrive = useMemo(() => detectCloudDrive(vaultPath), [vaultPath]);
 
   // Sort and filter tree nodes
   const processedTree = useMemo(() => {
@@ -157,14 +143,14 @@ export const Sidebar: React.FC = () => {
       });
     }
 
-    function filterNodes(nodes: FileNode[], query: string, tagFilter: string | null): FileNode[] {
+    function filterNodes(nodes: FileNode[], query: string): FileNode[] {
       const q = query.toLowerCase();
       const result: FileNode[] = [];
 
       for (const node of nodes) {
         if (node.is_dir) {
-          const filteredChildren = node.children ? filterNodes(node.children, query, tagFilter) : [];
-          const nameMatches = !tagFilter && node.name.toLowerCase().includes(q);
+          const filteredChildren = node.children ? filterNodes(node.children, query) : [];
+          const nameMatches = node.name.toLowerCase().includes(q);
           if (nameMatches || filteredChildren.length > 0) {
             result.push({
               ...node,
@@ -172,19 +158,8 @@ export const Sidebar: React.FC = () => {
             });
           }
         } else {
-          // If filtering by tag, check if note has the tag
-          if (tagFilter) {
-            const normPath = node.path.replace(/\\/g, '/').toLowerCase();
-            const noteObj = notes.find((n) => n.path.replace(/\\/g, '/').toLowerCase() === normPath);
-            const matchesTag = noteObj?.tags?.includes(tagFilter);
-            const matchesQuery = !query.trim() || node.name.toLowerCase().includes(q);
-            if (matchesTag && matchesQuery) {
-              result.push(node);
-            }
-          } else {
-            if (node.name.toLowerCase().includes(q)) {
-              result.push(node);
-            }
+          if (node.name.toLowerCase().includes(q)) {
+            result.push(node);
           }
         }
       }
@@ -192,11 +167,11 @@ export const Sidebar: React.FC = () => {
     }
 
     let tree = sortNodes(fileTree);
-    if (searchTreeQuery.trim() || selectedTag) {
-      tree = filterNodes(tree, searchTreeQuery.trim(), selectedTag);
+    if (searchTreeQuery.trim()) {
+      tree = filterNodes(tree, searchTreeQuery.trim());
     }
     return tree;
-  }, [fileTree, sortOption, searchTreeQuery, selectedTag, notes]);
+  }, [fileTree, sortOption, searchTreeQuery]);
 
   const handleStartCreate = (type: 'file' | 'folder', parentFolderRel?: string) => {
     setCreatingItem({ type, parentFolderRel });
@@ -548,74 +523,40 @@ export const Sidebar: React.FC = () => {
             )}
           </div>
         </div>
-
-        {/* 3. Dedicated Tags Section (Prompt requirement: Notebooks, Tags and Graph) */}
-        <div className="pt-2 border-t border-[#272C36]">
-          <div className="flex items-center justify-between px-2 pb-1.5 text-[11px] font-semibold text-[#6B7280] tracking-wider uppercase">
-            <div className="flex items-center gap-1.5">
-              <Hash size={12} strokeWidth={1.5} />
-              <span>Tag ({allTagsWithCounts.length})</span>
-            </div>
-            {selectedTag && (
-              <button
-                onClick={() => setSelectedTag(null)}
-                className="text-[10px] text-[#E5484D] hover:underline flex items-center gap-0.5"
-                title="Cancella filtro tag"
-              >
-                <span>Cancella</span>
-                <X size={10} />
-              </button>
-            )}
-          </div>
-
-          {allTagsWithCounts.length === 0 ? (
-            <p className="px-2 text-xs text-[#6B7280] italic">
-              Nessun tag. Aggiungi <span className="font-mono text-[#9CA3AF]">#tag</span> nelle note.
-            </p>
-          ) : (
-            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
-              {allTagsWithCounts.map(({ tag, count }) => {
-                const isSelected = selectedTag === tag;
-                return (
-                  <button
-                    key={tag}
-                    onClick={() => setSelectedTag(isSelected ? null : tag)}
-                    className={`w-full flex items-center justify-between px-2 py-1 rounded-lg text-xs transition-colors ${
-                      isSelected
-                        ? 'bg-[#171B22] text-[#F3F4F6] border border-[#E5484D] font-medium'
-                        : 'text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#171B22]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span className="text-[#E5484D] font-mono text-[11px]">#</span>
-                      <span className="truncate">{tag}</span>
-                    </div>
-                    <span className="text-[10px] font-mono text-[#6B7280] bg-[#131720] px-1.5 py-0.2 rounded border border-[#272C36]">
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* 4. Bottom Utility Bar: Git Sync & Local-First indicator */}
+      {/* 4. Bottom Utility Bar: Cloud Drive / Git Sync & Local-First indicator */}
       <div className="p-3 border-t border-[#272C36] bg-[#0E1116] space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <button
-            onClick={toggleSyncModal}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-[#171B22] border border-[#272C36] hover:border-[#3A4150] text-[#F3F4F6] transition-colors"
-            title="Gestisci Sincronizzazione Vault (Git / Cloud)"
-          >
-            <Cloud size={13} strokeWidth={1.5} className="text-[#9CA3AF]" />
-            <span>Sync</span>
-            {autoSyncInterval !== 'off' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80]" title={`Auto-sync: ${autoSyncInterval}`} />
-            )}
-            {gitStatus.isSyncing && <RefreshCw size={11} strokeWidth={1.5} className="animate-spin text-[#E5484D]" />}
-          </button>
+          {cloudDrive.isCloudDrive ? (
+            <button
+              onClick={toggleSyncModal}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 transition-all shadow-apple-sm"
+              title={cloudDrive.description}
+            >
+              <div className="relative flex items-center justify-center">
+                <Cloud size={13} strokeWidth={1.75} className="text-emerald-400" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+              <span className="font-semibold text-emerald-400 tracking-wide">Synced</span>
+              <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-emerald-400/15 text-emerald-300">
+                {cloudDrive.providerShort}
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={toggleSyncModal}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-[#171B22] border border-[#272C36] hover:border-[#3A4150] text-[#F3F4F6] transition-colors"
+              title="Gestisci Sincronizzazione Vault (Git / Cloud)"
+            >
+              <Cloud size={13} strokeWidth={1.5} className="text-[#9CA3AF]" />
+              <span>Sync</span>
+              {autoSyncInterval !== 'off' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80]" title={`Auto-sync: ${autoSyncInterval}`} />
+              )}
+              {gitStatus.isSyncing && <RefreshCw size={11} strokeWidth={1.5} className="animate-spin text-[#E5484D]" />}
+            </button>
+          )}
 
           <div className="flex items-center gap-1.5 text-[10px] text-[#6B7280]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80]" />
@@ -683,6 +624,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   onSubmitRename,
   onCancelRename,
 }) => {
+  const requestConfirm = useVaultStore((state) => state.requestConfirm);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -752,9 +694,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               <FolderPlus size={12} strokeWidth={1.5} />
             </button>
             <button
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
-                if (confirm(`Eliminare la cartella "${node.name}" e il suo contenuto?`)) {
+                const confirmed = await requestConfirm({
+                  title: 'Elimina Cartella',
+                  message: `Eliminare la cartella "${node.name}" e tutto il suo contenuto?`,
+                  confirmLabel: 'Elimina Cartella',
+                  isDanger: true,
+                });
+                if (confirmed) {
                   deleteFolder(node.path);
                 }
               }}
@@ -909,9 +857,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               <Pencil size={12} strokeWidth={1.5} />
             </button>
             <button
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
-                if (confirm(`Eliminare la nota "${cleanTitle}"?`)) {
+                const confirmed = await requestConfirm({
+                  title: 'Elimina Nota',
+                  message: `Eliminare la nota "${cleanTitle}"?`,
+                  confirmLabel: 'Elimina Nota',
+                  isDanger: true,
+                });
+                if (confirmed) {
                   deleteNote(node.path);
                 }
               }}
@@ -941,9 +895,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             <span>Rinomina</span>
           </button>
           <button
-            onClick={() => {
+            onClick={async () => {
               setContextMenu(null);
-              if (confirm(`Eliminare la nota "${cleanTitle}"?`)) {
+              const confirmed = await requestConfirm({
+                title: 'Elimina Nota',
+                message: `Eliminare la nota "${cleanTitle}"?`,
+                confirmLabel: 'Elimina Nota',
+                isDanger: true,
+              });
+              if (confirmed) {
                 deleteNote(node.path);
               }
             }}

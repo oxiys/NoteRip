@@ -37,6 +37,7 @@ export const NoteList: React.FC = () => {
     selectNote,
     createNewNote,
     deleteNote,
+    requestConfirm,
     renameNote,
     setSearchQuery,
     searchLimitDepth1,
@@ -328,9 +329,15 @@ export const NoteList: React.FC = () => {
 
                       {/* Delete Button (visible on hover) */}
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          if (confirm(`Eliminare definitivamente "${note.title}" dal disco?`)) {
+                          const confirmed = await requestConfirm({
+                            title: 'Elimina Nota',
+                            message: `Eliminare definitivamente "${note.title}" dal disco?`,
+                            confirmLabel: 'Elimina',
+                            isDanger: true,
+                          });
+                          if (confirmed) {
                             deleteNote(note.path);
                           }
                         }}
@@ -369,10 +376,16 @@ export const NoteList: React.FC = () => {
               <span>Rinomina</span>
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 const { notePath, noteTitle } = contextMenu;
                 setContextMenu(null);
-                if (confirm(`Eliminare definitivamente "${noteTitle}" dal disco?`)) {
+                const confirmed = await requestConfirm({
+                  title: 'Elimina Nota',
+                  message: `Eliminare definitivamente "${noteTitle}" dal disco?`,
+                  confirmLabel: 'Elimina',
+                  isDanger: true,
+                });
+                if (confirmed) {
                   deleteNote(notePath);
                 }
               }}

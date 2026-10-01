@@ -1,6 +1,6 @@
 [package]
 name = "noterip"
-version = "0.1.0"
+version = "0.2.0"
 description = "NoteRip - Personal Knowledge Base & Architecture Studio"
 authors = ["NoteRip"]
 license = "MIT"

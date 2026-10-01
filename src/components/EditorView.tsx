@@ -72,6 +72,7 @@ export const EditorView: React.FC = () => {
     autoSaveMode,
     setAutoSaveMode,
     openNewFlashcardModal,
+    openAutoFlashcardModal,
     setActiveView,
     toggleFontModal,
   } = useVaultStore();
@@ -1637,21 +1638,36 @@ export const EditorView: React.FC = () => {
             )}
           </div>
 
-          {/* Flashcard Study Note Button */}
-          {noteFlashcardsCount > 0 && (
+          {/* Flashcard Quick Actions: Study & Auto-Generate */}
+          <div className="flex items-center gap-1.5">
             <button
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => openFlashcardSession(null, activeNotePath)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium text-[#F3F4F6] bg-[#171B22] border border-[#272C36] hover:border-[#E5484D] transition-colors"
-              title={`Ripassa ${noteFlashcardsCount} flashcards collegate a questa nota`}
+              onClick={() => {
+                const sel = window.getSelection()?.toString() || '';
+                openAutoFlashcardModal(sel || activeNoteContent, activeNote?.title, activeNote?.folder);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium text-amber-500 hover:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 transition-all shadow-apple-sm"
+              title="Genera flashcard automaticamente da questa nota (AI & Regole)"
             >
-              <Brain size={13} strokeWidth={1.5} className="text-[#E5484D]" />
-              <span className="hidden sm:inline">Ripassa</span>
-              <span className="font-mono text-[10px] text-[#E5484D] font-bold">
-                {noteFlashcardsCount}
-              </span>
+              <Sparkles size={13} className="text-amber-500" />
+              <span className="hidden sm:inline">Genera Flashcard</span>
             </button>
-          )}
+
+            {noteFlashcardsCount > 0 && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => openFlashcardSession(null, activeNotePath)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium text-[#F3F4F6] bg-[#171B22] border border-[#272C36] hover:border-[#E5484D] transition-colors"
+                title={`Ripassa ${noteFlashcardsCount} flashcards collegate a questa nota`}
+              >
+                <Brain size={13} strokeWidth={1.5} className="text-[#E5484D]" />
+                <span className="hidden sm:inline">Ripassa</span>
+                <span className="font-mono text-[10px] text-[#E5484D] font-bold">
+                  {noteFlashcardsCount}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2470,6 +2486,20 @@ classDiagram
               <div className="px-2 py-1 text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
                 Flashcards & Studio Separato
               </div>
+                <button
+                  onClick={() => {
+                    const sel = window.getSelection()?.toString() || '';
+                    openAutoFlashcardModal(sel || activeNoteContent, activeNote?.title, activeNote?.folder);
+                    setShowFlashcardMenu(false);
+                  }}
+                  className="w-full text-left p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex flex-col transition-colors border border-amber-500/20"
+                >
+                  <div className="flex items-center space-x-1.5 font-semibold">
+                    <Sparkles size={13} />
+                    <span>Genera Flashcards Automatiche</span>
+                  </div>
+                  <span className="text-[10px] text-[var(--text-muted)]">Crea con AI o estrai da formule e definizioni</span>
+                </button>
               <button
                 onClick={() => {
                   openNewFlashcardModal(activeNotePath || undefined);

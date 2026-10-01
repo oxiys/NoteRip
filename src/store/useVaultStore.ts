@@ -99,6 +99,51 @@ interface VaultState {
   openNewFlashcardModal: (front?: string, back?: string, deck?: string) => void;
   closeNewFlashcardModal: () => void;
 
+  // Confirmation Modal (Custom dialog replacing window.confirm)
+  confirmDialog: {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDanger?: boolean;
+    resolve?: (value: boolean) => void;
+  };
+  requestConfirm: (params: {
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDanger?: boolean;
+  }) => Promise<boolean>;
+  handleConfirmDialogResponse: (confirmed: boolean) => void;
+
+  // In-App Toast Notifications (replacing window.alert)
+  toasts: Array<{
+    id: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>;
+  showToast: (message: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
+  removeToast: (id: string) => void;
+
+  // Auto Flashcard Modal (Smart AI & Heuristic Generation)
+  isAutoFlashcardModalOpen: boolean;
+  autoFlashcardInitialText: string;
+  autoFlashcardInitialTitle: string;
+  autoFlashcardInitialDeck: string;
+  openAutoFlashcardModal: (initialText?: string, initialTitle?: string, initialDeck?: string) => void;
+  closeAutoFlashcardModal: () => void;
+
+  addFlashcardsBatch: (cards: Array<{
+    front: string;
+    back: string;
+    deck?: string;
+    tags?: string[];
+    notePath?: string;
+    noteTitle?: string;
+  }>) => Promise<FlashcardItem[]>;
+
   // History & Undo / Redo
   undoStack: string[];
   redoStack: string[];
@@ -351,6 +396,20 @@ export const useVaultStore = create<VaultState>((set, get) => {
     newFlashcardInitialFront: '',
     newFlashcardInitialBack: '',
     newFlashcardInitialDeck: '',
+    confirmDialog: {
+      isOpen: false,
+      title: '',
+      message: '',
+      confirmLabel: 'Conferma',
+      cancelLabel: 'Annulla',
+      isDanger: true,
+      resolve: undefined,
+    },
+    toasts: [],
+    isAutoFlashcardModalOpen: false,
+    autoFlashcardInitialText: '',
+    autoFlashcardInitialTitle: '',
+    autoFlashcardInitialDeck: '',
 
     initialize: async () => {
       applyAppTheme('crimson-noir');
@@ -988,6 +1047,26 @@ export const useVaultStore = create<VaultState>((set, get) => {
       return newCard;
     },
 
+    addFlashcardsBatch: async (cardsData) => {
+      const { flashcards, vaultPath } = get();
+      const newCards = cardsData.map((c) => ({
+        id: generateCardId(),
+        deck: c.deck?.trim() || 'Generale',
+        front: c.front.trim(),
+        back: c.back.trim(),
+        tags: c.tags || [],
+        notePath: c.notePath,
+        noteTitle: c.noteTitle,
+        progress: createDefaultProgress(),
+        createdAt: Date.now(),
+      }));
+      const updated = [...newCards, ...flashcards];
+      const dueCount = getDueCards(updated).length;
+      set({ flashcards: updated, dueFlashcardsCount: dueCount });
+      await saveStandaloneFlashcards(updated, vaultPath);
+      return newCards;
+    },
+
     updateFlashcard: async (id: string, updates: Partial<FlashcardItem>) => {
       const { flashcards, vaultPath } = get();
       const updated = flashcards.map((c) =>
@@ -1124,6 +1203,74 @@ export const useVaultStore = create<VaultState>((set, get) => {
         newFlashcardInitialFront: '',
         newFlashcardInitialBack: '',
         newFlashcardInitialDeck: '',
+      });
+    },
+
+    requestConfirm: (params) => {
+      return new Promise<boolean>((resolve) => {
+        set({
+          confirmDialog: {
+            isOpen: true,
+            title: params.title,
+            message: params.message,
+            confirmLabel: params.confirmLabel || 'Conferma',
+            cancelLabel: params.cancelLabel || 'Annulla',
+            isDanger: params.isDanger ?? true,
+            resolve,
+          },
+        });
+      });
+    },
+
+    handleConfirmDialogResponse: (confirmed: boolean) => {
+      const { confirmDialog } = get();
+      if (confirmDialog.resolve) {
+        confirmDialog.resolve(confirmed);
+      }
+      set({
+        confirmDialog: {
+          isOpen: false,
+          title: '',
+          message: '',
+          confirmLabel: 'Conferma',
+          cancelLabel: 'Annulla',
+          isDanger: true,
+          resolve: undefined,
+        },
+      });
+    },
+
+    showToast: (message, type = 'info', duration = 3500) => {
+      const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      set((state) => ({
+        toasts: [...state.toasts, { id, message, type }],
+      }));
+      setTimeout(() => {
+        get().removeToast(id);
+      }, duration);
+    },
+
+    removeToast: (id) => {
+      set((state) => ({
+        toasts: state.toasts.filter((t) => t.id !== id),
+      }));
+    },
+
+    openAutoFlashcardModal: (initialText = '', initialTitle = '', initialDeck = '') => {
+      set({
+        isAutoFlashcardModalOpen: true,
+        autoFlashcardInitialText: initialText,
+        autoFlashcardInitialTitle: initialTitle,
+        autoFlashcardInitialDeck: initialDeck,
+      });
+    },
+
+    closeAutoFlashcardModal: () => {
+      set({
+        isAutoFlashcardModalOpen: false,
+        autoFlashcardInitialText: '',
+        autoFlashcardInitialTitle: '',
+        autoFlashcardInitialDeck: '',
       });
     },
   };

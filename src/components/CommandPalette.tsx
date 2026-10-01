@@ -6,6 +6,7 @@ import {
   Folder,
   Tag,
   Brain,
+  Sparkles,
   Network,
   Cloud,
   PanelLeft,
@@ -90,6 +91,8 @@ export const CommandPalette: React.FC = () => {
     autoSaveMode,
     setAutoSaveMode,
     openNewFlashcardModal,
+    openAutoFlashcardModal,
+    showToast,
   } = useVaultStore();
 
   const [query, setQuery] = useState('');
@@ -136,7 +139,7 @@ export const CommandPalette: React.FC = () => {
   // Helper to insert snippet into active note
   const insertIntoCurrentNote = (snippet: string) => {
     if (!activeNotePath) {
-      alert('Apri prima una nota per inserire questo elemento!');
+      showToast('Apri prima una nota per inserire questo elemento!', 'info');
       return;
     }
     const newContent = activeNoteContent ? `${activeNoteContent}\n\n${snippet.trim()}\n` : `${snippet.trim()}\n`;
@@ -180,6 +183,21 @@ export const CommandPalette: React.FC = () => {
         icon: <Filter size={16} className="text-blue-500" />,
         action: () => setSearchLimitDepth1(!searchLimitDepth1),
         keywords: ['profondita', 'ricerca', 'cartelle dirette', 'depth', 'filtro', 'root'],
+      },
+
+      // Generazione Automatica Flashcards (AI & Regole)
+      {
+        id: 'cmd-auto-flashcard',
+        category: 'Comandi',
+        title: 'Genera Flashcards Automaticamente (AI & Regole)',
+        subtitle: 'Estrai domande concettuali, formule e definizioni dalla nota attiva',
+        badge: 'AI Smart',
+        icon: <Sparkles size={16} className="text-[#E5484D]" />,
+        action: () => {
+          const currentNote = notes.find((n) => n.path === activeNotePath);
+          openAutoFlashcardModal(activeNoteContent, currentNote?.title, currentNote?.folder);
+        },
+        keywords: ['flashcard', 'genera', 'ai', 'anki', 'automatica', 'active recall', 'formule', 'domande'],
       },
 
       // Nuova Flashcard Standalone
@@ -493,6 +511,8 @@ public record Studente(int matricola, String nome, String corso) {
     setAutoSaveMode,
     setSearchLimitDepth1,
     openNewFlashcardModal,
+    openAutoFlashcardModal,
+    notes,
     openSmartQAModal,
   ]);
 

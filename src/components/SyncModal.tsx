@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import type { AutoSyncOption } from '../store/useVaultStore';
+import { detectCloudDrive } from '../services/cloudDriveDetector';
 
 export const SyncModal: React.FC = () => {
   const {
@@ -33,6 +34,8 @@ export const SyncModal: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'cloud' | 'git' | 'p2p'>('cloud');
   const [customCommitMsg, setCustomCommitMsg] = useState('');
+
+  const cloudDrive = detectCloudDrive(vaultPath);
 
   if (!isSyncModalOpen) return null;
 
@@ -86,9 +89,17 @@ export const SyncModal: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center space-x-1.5 shrink-0 text-[11px] text-[var(--text-muted)]">
-            <Clock size={12} />
-            <span>{formatLastSync()}</span>
+          <div className="flex items-center space-x-2 shrink-0">
+            {cloudDrive.isCloudDrive && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <CheckCircle2 size={11} />
+                <span>{cloudDrive.provider} Synced</span>
+              </span>
+            )}
+            <div className="flex items-center space-x-1.5 text-[11px] text-[var(--text-muted)]">
+              <Clock size={12} />
+              <span>{formatLastSync()}</span>
+            </div>
           </div>
         </div>
 
@@ -103,7 +114,7 @@ export const SyncModal: React.FC = () => {
             }`}
           >
             <Cloud size={14} />
-            <span>Cartella Cloud (Più Semplice)</span>
+            <span>Cartella Cloud {cloudDrive.isCloudDrive ? `(${cloudDrive.providerShort} Attivo)` : '(Consigliato)'}</span>
           </button>
           <button
             onClick={() => setActiveTab('git')}
@@ -134,18 +145,37 @@ export const SyncModal: React.FC = () => {
           {/* TAB 1: Cloud Folder (Zero Config - Most User-Friendly) */}
           {activeTab === 'cloud' && (
             <div className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-[var(--accent-subtle)] border border-[var(--border-strong)] flex items-start space-x-3">
-                <Info size={18} className="text-[var(--accent)] shrink-0 mt-0.5" />
-                <div className="text-xs space-y-1">
-                  <p className="font-semibold text-[var(--text-primary)]">
-                    Metodo Consigliato: Zero Configurazione & 100% Affidabile
-                  </p>
-                  <p className="text-[var(--text-secondary)] leading-relaxed">
-                    NoteRip salva tutti i tuoi documenti come normalissimi file <code className="font-mono text-[var(--accent)]">.md</code>.
-                    Se collochi la cartella del Vault dentro il tuo servizio cloud (OneDrive, iCloud Drive, Google Drive o Dropbox), la sincronizzazione avverrà <strong>in modo istantaneo e trasparente</strong> in background senza che tu debba fare nulla!
-                  </p>
+              {cloudDrive.isCloudDrive ? (
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <CheckCircle2 size={18} />
+                  </div>
+                  <div className="text-xs space-y-1">
+                    <div className="font-semibold text-emerald-300 flex items-center gap-1.5">
+                      <span>Cloud Drive Riconosciuto: {cloudDrive.provider}</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
+                        In Sincronizzazione
+                      </span>
+                    </div>
+                    <p className="text-[#9CA3AF] leading-relaxed">
+                      La cartella selezionata fa parte di <strong className="text-[#F3F4F6]">{cloudDrive.provider}</strong>. Le modifiche ai tuoi appunti e flashcard vengono sincronizzate automaticamente e protette sul cloud in tempo reale.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-[var(--accent-subtle)] border border-[var(--border-strong)] flex items-start space-x-3">
+                  <Info size={18} className="text-[var(--accent)] shrink-0 mt-0.5" />
+                  <div className="text-xs space-y-1">
+                    <p className="font-semibold text-[var(--text-primary)]">
+                      Metodo Consigliato: Zero Configurazione & 100% Affidabile
+                    </p>
+                    <p className="text-[var(--text-secondary)] leading-relaxed">
+                      NoteRip salva tutti i tuoi documenti come normalissimi file <code className="font-mono text-[var(--accent)]">.md</code>.
+                      Se collochi la cartella del Vault dentro il tuo servizio cloud (Google Drive, OneDrive, iCloud Drive o Dropbox), la sincronizzazione avverrà <strong>in modo istantaneo e trasparente</strong> in background!
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] space-y-2">

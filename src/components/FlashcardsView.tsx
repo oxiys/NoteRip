@@ -65,6 +65,8 @@ export const FlashcardsView: React.FC = () => {
     updateFlashcard,
     deleteFlashcard,
     resetFlashcardProgress,
+    requestConfirm,
+    openAutoFlashcardModal,
     recordCardReview,
     notes,
     selectNote,
@@ -355,6 +357,16 @@ export const FlashcardsView: React.FC = () => {
           >
             <Play size={13} fill="currentColor" />
             <span>Ripassa Mazzo ({activeStats.due})</span>
+          </button>
+
+          {/* Auto Generate Flashcards Button */}
+          <button
+            onClick={() => openAutoFlashcardModal('', '', selectedDeck !== 'all' ? selectedDeck : '')}
+            className="px-3 py-1.5 rounded-xl bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-apple-sm"
+            title="Genera flashcard automaticamente con AI o estrazione euristica"
+          >
+            <Sparkles size={14} className="text-amber-500" />
+            <span>Genera con AI</span>
           </button>
 
           {/* New Flashcard Button */}
@@ -837,8 +849,14 @@ export const FlashcardsView: React.FC = () => {
                               <Edit3 size={13} />
                             </button>
                             <button
-                              onClick={() => {
-                                if (window.confirm('Vuoi davvero eliminare questa flashcard?')) {
+                              onClick={async () => {
+                                const confirmed = await requestConfirm({
+                                  title: 'Elimina Flashcard',
+                                  message: 'Vuoi davvero eliminare questa flashcard dal mazzo?',
+                                  confirmLabel: 'Elimina',
+                                  isDanger: true,
+                                });
+                                if (confirmed) {
                                   deleteFlashcard(card.id);
                                 }
                               }}

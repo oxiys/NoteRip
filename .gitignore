@@ -44,4 +44,5 @@ lerna-debug.log*
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+scratch/
 

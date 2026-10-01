@@ -5,6 +5,8 @@ import { TopBar } from './components/TopBar';
 import { EditorView } from './components/EditorView';
 import { InspectorPanel } from './components/InspectorPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ConfirmModal } from './components/ConfirmModal';
+import { ToastContainer } from './components/ToastContainer';
 import { FolderOpen } from 'lucide-react';
 
 // Lazy-loaded heavy views and modals to minimize initial V8 heap and RAM footprint
@@ -16,6 +18,7 @@ const CommandPalette = lazy(() => import('./components/CommandPalette').then((m)
 const SmartQAModal = lazy(() => import('./components/SmartQAModal').then((m) => ({ default: m.SmartQAModal })));
 const FontModal = lazy(() => import('./components/FontModal').then((m) => ({ default: m.FontModal })));
 const NewFlashcardModal = lazy(() => import('./components/NewFlashcardModal').then((m) => ({ default: m.NewFlashcardModal })));
+const AutoFlashcardModal = lazy(() => import('./components/AutoFlashcardModal').then((m) => ({ default: m.AutoFlashcardModal })));
 
 export const App: React.FC = () => {
   const {
@@ -29,6 +32,7 @@ export const App: React.FC = () => {
     isSmartQAModalOpen,
     isFontModalOpen,
     isNewFlashcardModalOpen,
+    isAutoFlashcardModalOpen,
     toggleCommandPalette,
     toggleSmartQAModal,
   } = useVaultStore();
@@ -121,7 +125,14 @@ export const App: React.FC = () => {
         {isSmartQAModalOpen && <SmartQAModal />}
         {isFontModalOpen && <FontModal />}
         {isNewFlashcardModalOpen && <NewFlashcardModal />}
+        {isAutoFlashcardModalOpen && <AutoFlashcardModal />}
       </Suspense>
+
+      {/* In-App Confirmation Modal (Replaces browser confirm) */}
+      <ConfirmModal />
+
+      {/* Non-intrusive Toast Notifications (Replaces browser alert) */}
+      <ToastContainer />
     </div>
   );
 };
