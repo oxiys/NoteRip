@@ -11,7 +11,7 @@
 
   <br />
 
-  [![Release](https://img.shields.io/badge/Release-v0.2.0-E5484D?style=for-the-badge&logo=github)](https://github.com/oxiys/NoteRip/releases/tag/v0.2.0)
+  [![Release](https://img.shields.io/badge/Release-v0.2.1-E5484D?style=for-the-badge&logo=github)](https://github.com/oxiys/NoteRip/releases/tag/v0.2.1)
   [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-171B22?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/oxiys/NoteRip/releases)
   [![Tauri v2](https://img.shields.io/badge/Tauri-v2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)](https://v2.tauri.app/)
   [![Rust](https://img.shields.io/badge/Rust-2024%20Edition-black?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -19,7 +19,7 @@
 
   <br />
 
-  [📥 Download Latest Release](https://github.com/oxiys/NoteRip/releases/tag/v0.2.0) • [✨ Key Features](#-key-features) • [⚡ Architecture Circuits](#-computer-architecture--digital-circuits-in-markdown) • [⌨️ Shortcuts](#️-keyboard-shortcuts) • [🚀 Getting Started](#-getting-started)
+  [📥 Download Latest Release](https://github.com/oxiys/NoteRip/releases/tag/v0.2.1) • [✨ Key Features](#-key-features) • [⚡ Architecture Circuits](#-computer-architecture--digital-circuits-in-markdown) • [⌨️ Shortcuts](#️-keyboard-shortcuts) • [🚀 Getting Started](#-getting-started)
 
 </div>
 
