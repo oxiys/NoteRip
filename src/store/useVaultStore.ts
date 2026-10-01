@@ -937,17 +937,18 @@ export const useVaultStore = create<VaultState>((set, get) => {
       if (!vaultPath || sourcePaths.length === 0) return false;
 
       const normVault = normalizePath(vaultPath);
-      const isTargetRoot = !targetFolderPath || normalizePath(targetFolderPath) === normVault;
+      const isTargetRoot = !targetFolderPath || normalizePath(targetFolderPath).toLowerCase() === normVault.toLowerCase();
       const targetDir = isTargetRoot ? normVault : normalizePath(targetFolderPath);
+      const normTargetLower = targetDir.toLowerCase();
 
       const separator = vaultPath.includes('\\') ? '\\' : '/';
 
       // 1. Filter out redundant children if their ancestor folder is also in sourcePaths
       const filteredSources = sourcePaths.filter((path) => {
-        const norm = normalizePath(path);
+        const norm = normalizePath(path).toLowerCase();
         return !sourcePaths.some((other) => {
           if (other === path) return false;
-          const normOther = normalizePath(other);
+          const normOther = normalizePath(other).toLowerCase();
           return norm.startsWith(normOther + '/');
         });
       });
@@ -956,8 +957,8 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
       // 2. Validate that we're not moving a directory into itself or one of its descendants
       for (const src of filteredSources) {
-        const normSrc = normalizePath(src);
-        if (targetDir === normSrc || targetDir.startsWith(normSrc + '/')) {
+        const normSrc = normalizePath(src).toLowerCase();
+        if (normTargetLower === normSrc || normTargetLower.startsWith(normSrc + '/')) {
           showToast('Impossibile spostare una cartella all\'interno di se stessa o di una sua sottocartella.', 'error');
           return false;
         }
@@ -980,10 +981,10 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
       for (const src of filteredSources) {
         const normSrc = normalizePath(src);
-        const parentDir = getPathDirname(normSrc);
+        const parentDir = getPathDirname(normSrc).toLowerCase();
 
         // Already directly inside destination folder
-        if (parentDir === targetDir) {
+        if (parentDir === normTargetLower) {
           continue;
         }
 
@@ -993,7 +994,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
         let isDir = false;
         function checkIsDir(nodes: FileNode[]): boolean {
           for (const n of nodes) {
-            if (normalizePath(n.path) === normSrc) return n.is_dir;
+            if (normalizePath(n.path).toLowerCase() === normSrc.toLowerCase()) return n.is_dir;
             if (n.children && checkIsDir(n.children)) return true;
           }
           return false;
@@ -1018,7 +1019,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
         const targetSep = formattedTargetDir.includes('\\') ? '\\' : separator;
         const newPath = `${cleanDir}${targetSep}${candidateName}`;
 
-        if (newPath === src) continue;
+        if (newPath.toLowerCase() === src.toLowerCase()) continue;
 
         try {
           await tauriBridge.renameNote(src, newPath);
@@ -1028,11 +1029,12 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
           // Track active note relocation
           if (nextActivePath) {
-            const normActive = normalizePath(nextActivePath);
-            if (normActive === normSrc) {
+            const normActive = normalizePath(nextActivePath).toLowerCase();
+            const normSrcLower = normSrc.toLowerCase();
+            if (normActive === normSrcLower) {
               nextActivePath = newPath;
-            } else if (normActive.startsWith(normSrc + '/')) {
-              const relSuffix = normActive.slice(normSrc.length);
+            } else if (normActive.startsWith(normSrcLower + '/')) {
+              const relSuffix = normalizePath(nextActivePath).slice(normSrc.length);
               const formattedRel = targetSep === '\\' ? relSuffix.replace(/\//g, '\\') : relSuffix;
               nextActivePath = `${newPath}${formattedRel}`;
             }
@@ -1077,9 +1079,10 @@ export const useVaultStore = create<VaultState>((set, get) => {
           'success'
         );
         return true;
+      } else {
+        showToast('Nessun elemento spostato (già presente nella cartella di destinazione).', 'info');
+        return false;
       }
-
-      return false;
     },
 
     deleteSelectedNodes: async () => {

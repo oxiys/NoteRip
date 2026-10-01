@@ -35,6 +35,9 @@ const SORT_OPTIONS: { id: FileSortOption; label: string; desc: string }[] = [
   { id: 'date-oldest', label: 'Meno recenti', desc: 'Note create per prime' },
 ];
 
+// Synchronous tracking of dragged paths for immediate dragover response without React state delay
+let activeDraggedPaths: string[] = [];
+
 export const Sidebar: React.FC = () => {
   const {
     vaultPath,
@@ -92,6 +95,7 @@ export const Sidebar: React.FC = () => {
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
   const [isDragOverRoot, setIsDragOverRoot] = useState(false);
   const hoverExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
 
   // Inline rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -248,17 +252,18 @@ export const Sidebar: React.FC = () => {
 
   // Drag and drop validation: can items drop into this folder?
   const canDropInFolder = (sources: string[], targetFolderPath: string) => {
-    if (!sources || sources.length === 0) return false;
-    const normTarget = normalizePath(targetFolderPath);
+    const items = sources && sources.length > 0 ? sources : activeDraggedPaths;
+    if (!items || items.length === 0) return false;
+    const normTarget = normalizePath(targetFolderPath).toLowerCase();
 
-    for (const src of sources) {
-      const normSrc = normalizePath(src);
+    for (const src of items) {
+      const normSrc = normalizePath(src).toLowerCase();
       if (normTarget === normSrc) return false;
       if (normTarget.startsWith(normSrc + '/')) return false;
     }
 
-    const allAlreadyInside = sources.every((src) => {
-      const parent = getPathDirname(normalizePath(src));
+    const allAlreadyInside = items.every((src) => {
+      const parent = getPathDirname(normalizePath(src)).toLowerCase();
       return parent === normTarget;
     });
 
@@ -266,14 +271,19 @@ export const Sidebar: React.FC = () => {
   };
 
   // Drag and drop validation: can items drop on vault root?
-  const canDropOnRoot = useMemo(() => {
-    if (!vaultPath || draggedPaths.length === 0) return false;
-    const normVault = normalizePath(vaultPath);
+  const canDropOnRootSources = (sources: string[]) => {
+    const items = sources && sources.length > 0 ? sources : activeDraggedPaths;
+    if (!vaultPath || items.length === 0) return false;
+    const normVault = normalizePath(vaultPath).toLowerCase();
 
-    return draggedPaths.some((src) => {
-      const parent = getPathDirname(normalizePath(src));
+    return items.some((src) => {
+      const parent = getPathDirname(normalizePath(src)).toLowerCase();
       return parent !== normVault;
     });
+  };
+
+  const canDropOnRoot = useMemo(() => {
+    return canDropOnRootSources(draggedPaths.length > 0 ? draggedPaths : activeDraggedPaths);
   }, [vaultPath, draggedPaths]);
 
   // Drag Start handler
@@ -286,48 +296,66 @@ export const Sidebar: React.FC = () => {
       setSelectedPaths([nodePath]);
     }
 
+    activeDraggedPaths = pathsToDrag;
     setDraggedPaths(pathsToDrag);
-    e.dataTransfer.setData('application/json', JSON.stringify(pathsToDrag));
-    e.dataTransfer.setData('text/plain', pathsToDrag.join('\n'));
-    e.dataTransfer.effectAllowed = 'move';
+
+    try {
+      e.dataTransfer.setData('application/json', JSON.stringify(pathsToDrag));
+      e.dataTransfer.setData('text/plain', pathsToDrag.join('\n'));
+      e.dataTransfer.effectAllowed = 'move';
+    } catch {
+      // ignore
+    }
 
     // Ghost drag image if multiple items
     if (pathsToDrag.length > 1) {
+      if (ghostRef.current && document.body.contains(ghostRef.current)) {
+        document.body.removeChild(ghostRef.current);
+        ghostRef.current = null;
+      }
       const ghost = document.createElement('div');
-      ghost.style.position = 'absolute';
+      ghost.style.position = 'fixed';
       ghost.style.top = '-9999px';
       ghost.style.left = '-9999px';
-      ghost.style.padding = '5px 10px';
+      ghost.style.padding = '6px 12px';
       ghost.style.borderRadius = '8px';
       ghost.style.backgroundColor = '#171B22';
       ghost.style.color = '#F3F4F6';
       ghost.style.border = '1px solid #E5484D';
-      ghost.style.fontSize = '11px';
+      ghost.style.fontSize = '12px';
       ghost.style.fontWeight = '600';
       ghost.style.display = 'flex';
       ghost.style.alignItems = 'center';
       ghost.style.gap = '6px';
       ghost.style.zIndex = '99999';
-      ghost.style.boxShadow = '0 6px 16px rgba(0,0,0,0.6)';
-      ghost.textContent = `📁 ${pathsToDrag.length} elementi`;
+      ghost.style.pointerEvents = 'none';
+      ghost.style.boxShadow = '0 8px 24px rgba(0,0,0,0.6)';
+      ghost.textContent = `📁 Sposta ${pathsToDrag.length} elementi`;
       document.body.appendChild(ghost);
-      e.dataTransfer.setDragImage(ghost, 15, 15);
-      setTimeout(() => {
-        if (document.body.contains(ghost)) {
-          document.body.removeChild(ghost);
-        }
-      }, 0);
+      ghostRef.current = ghost;
+      try {
+        e.dataTransfer.setDragImage(ghost, 20, 20);
+      } catch {
+        // ignore
+      }
     }
   };
 
   // Drag End handler
   const handleDragEnd = () => {
+    activeDraggedPaths = [];
     setDraggedPaths([]);
     setDragOverFolderPath(null);
     setIsDragOverRoot(false);
     if (hoverExpandTimerRef.current) {
       clearTimeout(hoverExpandTimerRef.current);
       hoverExpandTimerRef.current = null;
+    }
+    if (ghostRef.current) {
+      if (document.body.contains(ghostRef.current)) {
+        document.body.removeChild(ghostRef.current);
+      }
+      ghostRef.current = null;
     }
   };
 
@@ -336,7 +364,7 @@ export const Sidebar: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    const sources = draggedPaths.length > 0 ? draggedPaths : [];
+    const sources = activeDraggedPaths.length > 0 ? activeDraggedPaths : draggedPaths;
     if (sources.length > 0 && !canDropInFolder(sources, folderPath)) {
       e.dataTransfer.dropEffect = 'none';
       return;
@@ -379,7 +407,7 @@ export const Sidebar: React.FC = () => {
       hoverExpandTimerRef.current = null;
     }
 
-    let items = draggedPaths;
+    let items = activeDraggedPaths.length > 0 ? activeDraggedPaths : draggedPaths;
     if (items.length === 0) {
       try {
         const raw = e.dataTransfer.getData('application/json');
@@ -388,16 +416,25 @@ export const Sidebar: React.FC = () => {
         // ignore
       }
     }
+    if (items.length === 0) {
+      try {
+        const text = e.dataTransfer.getData('text/plain');
+        if (text) items = text.split('\n').map((s) => s.trim()).filter(Boolean);
+      } catch {
+        // ignore
+      }
+    }
 
     if (items && items.length > 0 && canDropInFolder(items, folderPath)) {
       await moveNodes(items, folderPath);
     }
-    setDraggedPaths([]);
+    handleDragEnd();
   };
 
   // Root Drag Over
   const handleRootDragOver = (e: React.DragEvent) => {
-    if (!canDropOnRoot) return;
+    const sources = activeDraggedPaths.length > 0 ? activeDraggedPaths : draggedPaths;
+    if (!canDropOnRootSources(sources)) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
@@ -417,7 +454,7 @@ export const Sidebar: React.FC = () => {
     e.stopPropagation();
     setIsDragOverRoot(false);
 
-    let items = draggedPaths;
+    let items = activeDraggedPaths.length > 0 ? activeDraggedPaths : draggedPaths;
     if (items.length === 0) {
       try {
         const raw = e.dataTransfer.getData('application/json');
@@ -426,11 +463,79 @@ export const Sidebar: React.FC = () => {
         // ignore
       }
     }
+    if (items.length === 0) {
+      try {
+        const text = e.dataTransfer.getData('text/plain');
+        if (text) items = text.split('\n').map((s) => s.trim()).filter(Boolean);
+      } catch {
+        // ignore
+      }
+    }
 
-    if (items && items.length > 0) {
+    if (items && items.length > 0 && canDropOnRootSources(items)) {
       await moveNodes(items, null);
     }
-    setDraggedPaths([]);
+    handleDragEnd();
+  };
+
+  // File Drag Over: files redirect drop to their parent folder (or root)
+  const handleFileDragOver = (e: React.DragEvent, filePath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sources = activeDraggedPaths.length > 0 ? activeDraggedPaths : draggedPaths;
+    const parentFolder = getPathDirname(normalizePath(filePath));
+    const normVault = vaultPath ? normalizePath(vaultPath).toLowerCase() : '';
+    const isParentRoot = !parentFolder || parentFolder.toLowerCase() === normVault;
+
+    if (isParentRoot) {
+      if (canDropOnRootSources(sources)) {
+        e.dataTransfer.dropEffect = 'move';
+        setIsDragOverRoot(true);
+      } else {
+        e.dataTransfer.dropEffect = 'none';
+      }
+    } else {
+      if (canDropInFolder(sources, parentFolder)) {
+        e.dataTransfer.dropEffect = 'move';
+        setDragOverFolderPath(parentFolder);
+      } else {
+        e.dataTransfer.dropEffect = 'none';
+      }
+    }
+  };
+
+  // File Drag Leave
+  const handleFileDragLeave = (e: React.DragEvent, filePath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const parentFolder = getPathDirname(normalizePath(filePath));
+    const normVault = vaultPath ? normalizePath(vaultPath).toLowerCase() : '';
+    const isParentRoot = !parentFolder || parentFolder.toLowerCase() === normVault;
+
+    if (isParentRoot) {
+      setIsDragOverRoot(false);
+    } else if (dragOverFolderPath && dragOverFolderPath.toLowerCase() === parentFolder.toLowerCase()) {
+      setDragOverFolderPath(null);
+    }
+  };
+
+  // File Drop
+  const handleFileDrop = async (e: React.DragEvent, filePath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverRoot(false);
+    setDragOverFolderPath(null);
+
+    const parentFolder = getPathDirname(normalizePath(filePath));
+    const normVault = vaultPath ? normalizePath(vaultPath).toLowerCase() : '';
+    const isParentRoot = !parentFolder || parentFolder.toLowerCase() === normVault;
+
+    if (isParentRoot) {
+      await handleRootDrop(e);
+    } else {
+      await handleFolderDrop(e, parentFolder);
+    }
   };
 
   const handleStartCreate = (type: 'file' | 'folder', parentFolderRel?: string) => {
@@ -821,6 +926,9 @@ export const Sidebar: React.FC = () => {
                   onFolderDragOver={handleFolderDragOver}
                   onFolderDragLeave={handleFolderDragLeave}
                   onFolderDrop={handleFolderDrop}
+                  onFileDragOver={handleFileDragOver}
+                  onFileDragLeave={handleFileDragLeave}
+                  onFileDrop={handleFileDrop}
                   onStartCreate={handleStartCreate}
                   setCreateInputName={setCreateInputName}
                   onSubmitCreate={handleSubmitCreate}
@@ -855,7 +963,8 @@ export const Sidebar: React.FC = () => {
               }
             }}
             onDragOver={(e) => {
-              if (canDropOnRoot) {
+              const sources = activeDraggedPaths.length > 0 ? activeDraggedPaths : draggedPaths;
+              if (canDropOnRootSources(sources)) {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
                 setIsDragOverRoot(true);
@@ -863,9 +972,7 @@ export const Sidebar: React.FC = () => {
             }}
             onDragLeave={() => setIsDragOverRoot(false)}
             onDrop={async (e) => {
-              if (canDropOnRoot) {
-                await handleRootDrop(e);
-              }
+              await handleRootDrop(e);
             }}
           />
         </div>
@@ -945,6 +1052,9 @@ interface TreeNodeProps {
   onFolderDragOver: (e: React.DragEvent, path: string) => void;
   onFolderDragLeave: (e: React.DragEvent, path: string) => void;
   onFolderDrop: (e: React.DragEvent, path: string) => void;
+  onFileDragOver: (e: React.DragEvent, path: string) => void;
+  onFileDragLeave: (e: React.DragEvent, path: string) => void;
+  onFileDrop: (e: React.DragEvent, path: string) => void;
   onStartCreate: (type: 'file' | 'folder', parentFolderRel?: string) => void;
   setCreateInputName: (val: string) => void;
   onSubmitCreate: () => void;
@@ -983,6 +1093,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   onFolderDragOver,
   onFolderDragLeave,
   onFolderDrop,
+  onFileDragOver,
+  onFileDragLeave,
+  onFileDrop,
   onStartCreate,
   setCreateInputName,
   onSubmitCreate,
@@ -1029,6 +1142,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
       <div className="space-y-0.5">
         <div
           draggable={!isRenaming}
+          style={{ WebkitUserDrag: !isRenaming ? 'element' : 'none' } as React.CSSProperties}
           onDragStart={(e) => onDragStart(e, node.path)}
           onDragEnd={onDragEnd}
           onDragOver={(e) => onFolderDragOver(e, node.path)}
@@ -1337,6 +1451,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                   onFolderDragOver={onFolderDragOver}
                   onFolderDragLeave={onFolderDragLeave}
                   onFolderDrop={onFolderDrop}
+                  onFileDragOver={onFileDragOver}
+                  onFileDragLeave={onFileDragLeave}
+                  onFileDrop={onFileDrop}
                   onStartCreate={onStartCreate}
                   setCreateInputName={setCreateInputName}
                   onSubmitCreate={onSubmitCreate}
@@ -1377,8 +1494,12 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     <div className="relative">
       <div
         draggable={!isRenaming}
+        style={{ WebkitUserDrag: !isRenaming ? 'element' : 'none' } as React.CSSProperties}
         onDragStart={(e) => onDragStart(e, node.path)}
         onDragEnd={onDragEnd}
+        onDragOver={(e) => onFileDragOver(e, node.path)}
+        onDragLeave={(e) => onFileDragLeave(e, node.path)}
+        onDrop={(e) => onFileDrop(e, node.path)}
         onClick={(e) => {
           if (isRenaming) return;
           const isCtrlOrCmd = e.ctrlKey || e.metaKey;
