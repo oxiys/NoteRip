@@ -1445,12 +1445,6 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           </div>
 
           <div className="flex items-center gap-0.5">
-            {isDropTarget && (
-              <span className="text-[10px] font-semibold text-[#FFFFFF] bg-[#E5484D] px-1.5 py-0.5 rounded-full shadow-xs animate-pulse pointer-events-none">
-                Sposta qui
-              </span>
-            )}
-
             {!isRenaming && (
               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button

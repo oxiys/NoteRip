@@ -148,9 +148,11 @@ interface VaultState {
     front: string;
     back: string;
     deck?: string;
+    folder?: string;
     tags?: string[];
     notePath?: string;
     noteTitle?: string;
+    progress?: FlashcardProgress;
   }>) => Promise<FlashcardItem[]>;
 
   // History & Undo / Redo
@@ -199,15 +201,21 @@ interface VaultState {
   // Flashcard Actions (Standalone Spaced Repetition)
   loadFlashcards: () => Promise<void>;
   addFlashcard: (card: {
-    deck: string;
+    deck?: string;
+    folder?: string;
     front: string;
     back: string;
     tags?: string[];
     notePath?: string;
     noteTitle?: string;
+    progress?: FlashcardProgress;
   }) => Promise<FlashcardItem>;
   updateFlashcard: (id: string, updates: Partial<FlashcardItem>) => Promise<void>;
   deleteFlashcard: (id: string) => Promise<void>;
+  renameFlashcardFolder: (oldFolder: string, newFolder: string) => Promise<void>;
+  deleteFlashcardFolder: (folder: string) => Promise<void>;
+  renameFlashcardDeck: (oldDeck: string, newDeck: string, folder?: string) => Promise<void>;
+  deleteFlashcardDeck: (deck: string, folder?: string) => Promise<void>;
   resetFlashcardProgress: (id: string) => Promise<void>;
   openFlashcardSession: (targetFolder?: string | null, targetNotePath?: string | null) => void;
   closeFlashcardSession: () => void;
@@ -1324,15 +1332,29 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
     addFlashcard: async (cardData) => {
       const { flashcards, vaultPath } = get();
+      const rawDeck = cardData.deck?.trim() || '';
+      const rawFolder = cardData.folder?.trim() || '';
+      let folder = rawFolder;
+      let deck = rawDeck;
+
+      if (!folder && rawDeck.includes('/')) {
+        const parts = rawDeck.split('/');
+        folder = parts[0].trim();
+        deck = parts.slice(1).join('/').trim();
+      }
+      if (!folder) folder = 'Generale';
+      if (!deck) deck = 'Principale';
+
       const newCard: FlashcardItem = {
         id: generateCardId(),
-        deck: cardData.deck?.trim() || 'Generale',
+        deck,
+        folder,
         front: cardData.front.trim(),
         back: cardData.back.trim(),
         tags: cardData.tags || [],
         notePath: cardData.notePath,
         noteTitle: cardData.noteTitle,
-        progress: createDefaultProgress(),
+        progress: cardData.progress || createDefaultProgress(),
         createdAt: Date.now(),
       };
       const updated = [newCard, ...flashcards];
@@ -1344,17 +1366,33 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
     addFlashcardsBatch: async (cardsData) => {
       const { flashcards, vaultPath } = get();
-      const newCards = cardsData.map((c) => ({
-        id: generateCardId(),
-        deck: c.deck?.trim() || 'Generale',
-        front: c.front.trim(),
-        back: c.back.trim(),
-        tags: c.tags || [],
-        notePath: c.notePath,
-        noteTitle: c.noteTitle,
-        progress: createDefaultProgress(),
-        createdAt: Date.now(),
-      }));
+      const newCards: FlashcardItem[] = cardsData.map((c) => {
+        const rawDeck = c.deck?.trim() || '';
+        const rawFolder = c.folder?.trim() || '';
+        let folder = rawFolder;
+        let deck = rawDeck;
+
+        if (!folder && rawDeck.includes('/')) {
+          const parts = rawDeck.split('/');
+          folder = parts[0].trim();
+          deck = parts.slice(1).join('/').trim();
+        }
+        if (!folder) folder = 'Generale';
+        if (!deck) deck = 'Principale';
+
+        return {
+          id: generateCardId(),
+          deck,
+          folder,
+          front: c.front.trim(),
+          back: c.back.trim(),
+          tags: c.tags || [],
+          notePath: c.notePath,
+          noteTitle: c.noteTitle,
+          progress: c.progress || createDefaultProgress(),
+          createdAt: Date.now(),
+        };
+      });
       const updated = [...newCards, ...flashcards];
       const dueCount = getDueCards(updated).length;
       set({ flashcards: updated, dueFlashcardsCount: dueCount });
@@ -1375,6 +1413,49 @@ export const useVaultStore = create<VaultState>((set, get) => {
     deleteFlashcard: async (id: string) => {
       const { flashcards, vaultPath } = get();
       const updated = flashcards.filter((c) => c.id !== id);
+      const dueCount = getDueCards(updated).length;
+      set({ flashcards: updated, dueFlashcardsCount: dueCount });
+      await saveStandaloneFlashcards(updated, vaultPath);
+    },
+
+    renameFlashcardFolder: async (oldFolder: string, newFolder: string) => {
+      const { flashcards, vaultPath } = get();
+      const target = newFolder.trim() || 'Generale';
+      const updated = flashcards.map((c) => {
+        const f = c.folder || 'Generale';
+        return f === oldFolder ? { ...c, folder: target, updatedAt: Date.now() } : c;
+      });
+      set({ flashcards: updated });
+      await saveStandaloneFlashcards(updated, vaultPath);
+    },
+
+    deleteFlashcardFolder: async (folder: string) => {
+      const { flashcards, vaultPath } = get();
+      const updated = flashcards.filter((c) => (c.folder || 'Generale') !== folder);
+      const dueCount = getDueCards(updated).length;
+      set({ flashcards: updated, dueFlashcardsCount: dueCount });
+      await saveStandaloneFlashcards(updated, vaultPath);
+    },
+
+    renameFlashcardDeck: async (oldDeck: string, newDeck: string, folder?: string) => {
+      const { flashcards, vaultPath } = get();
+      const target = newDeck.trim() || 'Principale';
+      const updated = flashcards.map((c) => {
+        const deckMatch = (c.deck || 'Principale') === oldDeck;
+        const folderMatch = !folder || (c.folder || 'Generale') === folder;
+        return deckMatch && folderMatch ? { ...c, deck: target, updatedAt: Date.now() } : c;
+      });
+      set({ flashcards: updated });
+      await saveStandaloneFlashcards(updated, vaultPath);
+    },
+
+    deleteFlashcardDeck: async (deck: string, folder?: string) => {
+      const { flashcards, vaultPath } = get();
+      const updated = flashcards.filter((c) => {
+        const deckMatch = (c.deck || 'Principale') === deck;
+        const folderMatch = !folder || (c.folder || 'Generale') === folder;
+        return !(deckMatch && folderMatch);
+      });
       const dueCount = getDueCards(updated).length;
       set({ flashcards: updated, dueFlashcardsCount: dueCount });
       await saveStandaloneFlashcards(updated, vaultPath);

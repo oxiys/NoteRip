@@ -148,6 +148,7 @@ export function getDeckSummaries(cards: FlashcardItem[]): FlashcardDeckSummary[]
 export const DEFAULT_SEED_CARDS: FlashcardItem[] = [
   {
     id: 'seed_1',
+    folder: 'Informatica',
     deck: 'Architettura degli Elaboratori',
     front: 'Qual è la differenza principale tra un\'architettura CISC e una RISC?',
     back: 'CISC possiede un set di istruzioni complesso e variabile con molti modi di indirizzamento; RISC impiega un set ridotto di istruzioni uniformi a ciclo singolo, ottimizzate per pipeline hardware veloci.',
@@ -156,6 +157,7 @@ export const DEFAULT_SEED_CARDS: FlashcardItem[] = [
   },
   {
     id: 'seed_2',
+    folder: 'Informatica',
     deck: 'Architettura degli Elaboratori',
     front: 'Come si calcola il complemento a due di una parola binaria a $n$ bit?',
     back: 'Si applica l\'inversione logica di tutti i bit (complemento a uno, NOT) e si addiziona 1 al bit meno significativo (LSB).',
@@ -164,6 +166,7 @@ export const DEFAULT_SEED_CARDS: FlashcardItem[] = [
   },
   {
     id: 'seed_3',
+    folder: 'Informatica',
     deck: 'Logica Booleana',
     front: 'Scrivi le due leggi di De Morgan per la logica booleana.',
     back: '1. $\\overline{A \\cdot B} = \\bar{A} + \\bar{B}$\n2. $\\overline{A + B} = \\bar{A} \\cdot \\bar{B}$\nLa negazione del prodotto logico è la somma delle negazioni, e viceversa.',
@@ -172,6 +175,7 @@ export const DEFAULT_SEED_CARDS: FlashcardItem[] = [
   },
   {
     id: 'seed_4',
+    folder: 'Informatica',
     deck: 'Sistemi Operativi',
     front: 'Cosa si intende per Deadlock (Stallo) nei Sistemi Operativi e quali sono le 4 condizioni di Coffman?',
     back: 'Uno stato in cui due o più processi rimangono bloccati in attesa di risorse reciprocamente trattenute.\nLe 4 condizioni necessarie sono:\n1. Mutua Esclusione\n2. Possesso e Attesa (Hold and Wait)\n3. Nessuna Prelazione (No Preemption)\n4. Attesa Circolare (Circular Wait)',
@@ -180,6 +184,7 @@ export const DEFAULT_SEED_CARDS: FlashcardItem[] = [
   },
   {
     id: 'seed_5',
+    folder: 'Informatica',
     deck: 'Algoritmi e Strutture Dati',
     front: 'Qual è la complessità temporale nel caso medio e peggiore del Quicksort?',
     back: 'Caso medio: $O(n \\log n)$\nCaso peggiore: $O(n^2)$ (quando il pivot scelto è sistematicamente l\'elemento minimo o massimo)',

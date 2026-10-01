@@ -17,15 +17,25 @@ export const NewFlashcardModal: React.FC = () => {
 
   const [front, setFront] = useState('');
   const [back, setBack] = useState('');
+  const [folder, setFolder] = useState('');
   const [deck, setDeck] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [isSaved, setIsSaved] = useState(false);
 
-  // Existing decks list
+  // Existing folders & decks list
+  const existingFolders = useMemo(() => {
+    const set = new Set<string>();
+    flashcards.forEach((c) => {
+      const f = c.folder || (c.deck && c.deck.includes('/') ? c.deck.split('/')[0].trim() : 'Generale');
+      if (f) set.add(f);
+    });
+    return Array.from(set).sort();
+  }, [flashcards]);
+
   const existingDecks = useMemo(() => {
     const set = new Set<string>();
     flashcards.forEach((c) => {
-      const d = c.deck || c.folder || 'Generale';
+      const d = c.deck?.includes('/') ? c.deck.split('/').slice(1).join('/') : c.deck || 'Principale';
       if (d) set.add(d);
     });
     return Array.from(set).sort();
@@ -39,9 +49,10 @@ export const NewFlashcardModal: React.FC = () => {
     if (isNewFlashcardModalOpen) {
       setFront(newFlashcardInitialFront || '');
       setBack(newFlashcardInitialBack || '');
-      // Prefill deck with specified initial deck, or note folder, or 'Generale'
-      const fallbackDeck = activeNote?.folder && activeNote.folder !== 'Root' ? activeNote.folder : 'Generale';
-      setDeck(newFlashcardInitialDeck || fallbackDeck);
+      // Prefill folder with note folder, or 'Generale'
+      const fallbackFolder = activeNote?.folder && activeNote.folder !== 'Root' ? activeNote.folder : 'Generale';
+      setFolder(fallbackFolder);
+      setDeck(newFlashcardInitialDeck || 'Principale');
       setTagsInput('');
       setIsSaved(false);
     }
@@ -59,7 +70,8 @@ export const NewFlashcardModal: React.FC = () => {
       .filter((t) => t.length > 0);
 
     await addFlashcard({
-      deck: deck.trim() || 'Generale',
+      folder: folder.trim() || 'Generale',
+      deck: deck.trim() || 'Principale',
       front: front.trim(),
       back: back.trim(),
       tags,
@@ -105,40 +117,49 @@ export const NewFlashcardModal: React.FC = () => {
 
         {/* Form Body */}
         <form onSubmit={handleSave} className="p-5 space-y-4">
-          {/* Deck Selection */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
-              <Folder size={13} className="text-amber-500" />
-              <span>Mazzo di Destinazione:</span>
-            </label>
-            <div className="flex gap-2">
+          {/* Folder & Deck Dual Selectors */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                <Folder size={13} className="text-amber-500" />
+                <span>Cartella:</span>
+              </label>
               <input
                 type="text"
-                value={deck}
-                onChange={(e) => setDeck(e.target.value)}
-                placeholder="es. Sistemi Operativi, Algoritmi..."
-                className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                list="new-card-folder-suggestions"
+                value={folder}
+                onChange={(e) => setFolder(e.target.value)}
+                placeholder="es. Università, Medicina..."
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                 required
               />
-            </div>
-            {existingDecks.length > 0 && (
-              <div className="flex flex-wrap gap-1 pt-1">
-                {existingDecks.slice(0, 5).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => setDeck(d)}
-                    className={`text-[10px] px-2 py-0.5 rounded-md border transition-all ${
-                      deck === d
-                        ? 'bg-[var(--accent)] text-white border-transparent'
-                        : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                    }`}
-                  >
-                    {d}
-                  </button>
+              <datalist id="new-card-folder-suggestions">
+                {existingFolders.map((f) => (
+                  <option key={f} value={f} />
                 ))}
-              </div>
-            )}
+              </datalist>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                <Brain size={13} className="text-amber-500" />
+                <span>Mazzo:</span>
+              </label>
+              <input
+                type="text"
+                list="new-card-deck-suggestions"
+                value={deck}
+                onChange={(e) => setDeck(e.target.value)}
+                placeholder="es. Algoritmi, Anatomia..."
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                required
+              />
+              <datalist id="new-card-deck-suggestions">
+                {existingDecks.map((d) => (
+                  <option key={d} value={d} />
+                ))}
+              </datalist>
+            </div>
           </div>
 
           {/* Front / Question */}
